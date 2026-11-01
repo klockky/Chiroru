@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Check the packaged profile/backend/payload contract before any APK build."""
+import hashlib
+import json
+import re
+from pathlib import Path
+
+
+def verify(app: Path) -> None:
+    assets = app / "src/main/assets"
+    catalog = json.loads((assets / "firmware/profiles.json").read_text())
+    if catalog.get("schemaVersion") != 2 or not catalog.get("profiles"):
+        raise ValueError("Missing profiles or unsupported catalog schema")
+    registry = (app / "src/main/cpp/backend_registry.def").read_text()
+    backends = re.findall(r'^CHIRORU_BACKEND\("([a-z0-9-]+)"', registry, re.M)
+    if len(backends) != len(set(backends)):
+        raise ValueError("Duplicate native backend ID")
+    ids, identities = set(), set()
+    fields = {"device", "model", "fingerprint", "incremental", "sdk", "kernelRelease", "machine", "pageSize"}
+    for profile in catalog["profiles"]:
+        name = profile["id"]
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or name in ids:
+            raise ValueError(f"Invalid or duplicate firmware ID: {name}")
+        ids.add(name)
+        root = profile.get("root")
+        if not isinstance(root, dict) or set(root) != {"backend"}:
+            raise ValueError(f"Incomplete root support: {name}")
+        if not profile["label"].strip() or root["backend"] not in backends:
+            raise ValueError(f"Missing label/native backend: {name}")
+        if set(profile) - {"id", "label", "match", "root", "kernelSu", "adbRoot"}:
+            raise ValueError(f"Unknown profile fields: {name}")
+        match = profile["match"]
+        if set(match) != fields:
+            raise ValueError(f"Incomplete/unknown identity fields: {name}")
+        for key, value in match.items():
+            valid = (type(value) is int and value > 0) if key in {"sdk", "pageSize"} else (
+                isinstance(value, str) and bool(value.strip()) and "*" not in value)
+            if not valid:
+                raise ValueError(f"Identity must be exact and nonempty: {name}/{key}")
+        identity = json.dumps(match, sort_keys=True)
+        if identity in identities:
+            raise ValueError(f"Ambiguous firmware identity: {name}")
+        identities.add(identity)
+        for key, label, kinds in (("kernelSu", "KernelSU", ("module", "ksud")),
+                                  ("adbRoot", "ADB root", ("module", "loader", "client"))):
+            support = profile.get(key)
+            if support is None:
+                continue
+            if not isinstance(support, dict) or set(support) != {"backend", *kinds}:
+                raise ValueError(f"Incomplete {label} support: {name}")
+            if support["backend"] not in backends:
+                raise ValueError(f"Missing {label} native backend: {name}")
+            for kind in kinds:
+                artifact = support[kind]
+                path = artifact["asset"]
+                if not all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", p) for p in path.split("/")):
+                    raise ValueError(f"Invalid asset path: {path}")
+                data = (assets / path).read_bytes()
+                if not data or hashlib.sha256(data).hexdigest() != artifact["sha256"]:
+                    raise ValueError(f"Payload hash mismatch: {name}/{kind}")
+        print(f"Verified firmware profile: {name} (root, optional KernelSU/ADB root)")
+
+
+if __name__ == "__main__":
+    verify(Path(__file__).resolve().parents[1])

@@ -1,0 +1,88 @@
+
+chiron-vmlinux.elf:     file format elf64-littleaarch64
+
+
+Disassembly of section .kernel:
+
+ffffffd6103657f4 <kill_ioctx>:
+ffffffd6103657f4:	f800865e 	str	x30, [x18], #8
+ffffffd6103657f8:	a9bd7bfd 	stp	x29, x30, [sp, #-48]!
+ffffffd6103657fc:	a90157f6 	stp	x22, x21, [sp, #16]
+ffffffd610365800:	a9024ff4 	stp	x20, x19, [sp, #32]
+ffffffd610365804:	910003fd 	mov	x29, sp
+ffffffd610365808:	aa0203f4 	mov	x20, x2
+ffffffd61036580c:	aa0103f3 	mov	x19, x1
+ffffffd610365810:	aa0003f6 	mov	x22, x0
+ffffffd610365814:	d503201f 	nop
+ffffffd610365818:	910c22d5 	add	x21, x22, #0x308
+ffffffd61036581c:	aa1503e0 	mov	x0, x21
+ffffffd610365820:	9429672e 	bl	ffffffd610dbf4d8 <_raw_spin_lock>
+ffffffd610365824:	9100e268 	add	x8, x19, #0x38
+ffffffd610365828:	52800029 	mov	w9, #0x1                   	// #1
+ffffffd61036582c:	f9800111 	prfm	pstl1strm, [x8]
+ffffffd610365830:	885f7d0a 	ldxr	w10, [x8]
+ffffffd610365834:	880bfd09 	stlxr	w11, w9, [x8]
+ffffffd610365838:	35ffffcb 	cbnz	w11, ffffffd610365830 <kill_ioctx+0x3c>
+ffffffd61036583c:	d5033bbf 	dmb	ish
+ffffffd610365840:	340000aa 	cbz	w10, ffffffd610365854 <kill_ioctx+0x60>
+ffffffd610365844:	aa1503e0 	mov	x0, x21
+ffffffd610365848:	94296794 	bl	ffffffd610dbf698 <_raw_spin_unlock>
+ffffffd61036584c:	128002a0 	mov	w0, #0xffffffea            	// #-22
+ffffffd610365850:	14000025 	b	ffffffd6103658e4 <kill_ioctx+0xf0>
+ffffffd610365854:	f9418ad6 	ldr	x22, [x22, #784]
+ffffffd610365858:	b9424a68 	ldr	w8, [x19, #584]
+ffffffd61036585c:	8b080ec9 	add	x9, x22, x8, lsl #3
+ffffffd610365860:	f9400d29 	ldr	x9, [x9, #24]
+ffffffd610365864:	eb13013f 	cmp	x9, x19
+ffffffd610365868:	54000481 	b.ne	ffffffd6103658f8 <kill_ioctx+0x104>  // b.any
+ffffffd61036586c:	8b080ec8 	add	x8, x22, x8, lsl #3
+ffffffd610365870:	aa1503e0 	mov	x0, x21
+ffffffd610365874:	f9000d1f 	str	xzr, [x8, #24]
+ffffffd610365878:	94296788 	bl	ffffffd610dbf698 <_raw_spin_unlock>
+ffffffd61036587c:	91068260 	add	x0, x19, #0x1a0
+ffffffd610365880:	52800061 	mov	w1, #0x3                   	// #3
+ffffffd610365884:	2a1f03e2 	mov	w2, wzr
+ffffffd610365888:	aa1f03e3 	mov	x3, xzr
+ffffffd61036588c:	97f762be 	bl	ffffffd61013e384 <__wake_up>
+ffffffd610365890:	b9408e76 	ldr	w22, [x19, #140]
+ffffffd610365894:	f0008c80 	adrp	x0, ffffffd6114f8000 <_einittext+0x33cf04>
+ffffffd610365898:	910e4000 	add	x0, x0, #0x390
+ffffffd61036589c:	9429670f 	bl	ffffffd610dbf4d8 <_raw_spin_lock>
+ffffffd6103658a0:	f0008c95 	adrp	x21, ffffffd6114f8000 <_einittext+0x33cf04>
+ffffffd6103658a4:	f941baa8 	ldr	x8, [x21, #880]
+ffffffd6103658a8:	eb160108 	subs	x8, x8, x22
+ffffffd6103658ac:	54000363 	b.cc	ffffffd610365918 <kill_ioctx+0x124>  // b.lo, b.ul, b.last
+ffffffd6103658b0:	f0008c80 	adrp	x0, ffffffd6114f8000 <_einittext+0x33cf04>
+ffffffd6103658b4:	910e4000 	add	x0, x0, #0x390
+ffffffd6103658b8:	f901baa8 	str	x8, [x21, #880]
+ffffffd6103658bc:	94296777 	bl	ffffffd610dbf698 <_raw_spin_unlock>
+ffffffd6103658c0:	f9405261 	ldr	x1, [x19, #160]
+ffffffd6103658c4:	b4000061 	cbz	x1, ffffffd6103658d0 <kill_ioctx+0xdc>
+ffffffd6103658c8:	f9404e60 	ldr	x0, [x19, #152]
+ffffffd6103658cc:	97fd3758 	bl	ffffffd6102b362c <vm_munmap>
+ffffffd6103658d0:	aa1303e0 	mov	x0, x19
+ffffffd6103658d4:	aa1f03e1 	mov	x1, xzr
+ffffffd6103658d8:	f9007a74 	str	x20, [x19, #240]
+ffffffd6103658dc:	94094212 	bl	ffffffd6105b6124 <percpu_ref_kill_and_confirm>
+ffffffd6103658e0:	2a1f03e0 	mov	w0, wzr
+ffffffd6103658e4:	a9424ff4 	ldp	x20, x19, [sp, #32]
+ffffffd6103658e8:	a94157f6 	ldp	x22, x21, [sp, #16]
+ffffffd6103658ec:	a8c37bfd 	ldp	x29, x30, [sp], #48
+ffffffd6103658f0:	f85f8e5e 	ldr	x30, [x18, #-8]!
+ffffffd6103658f4:	d65f03c0 	ret
+ffffffd6103658f8:	d0005920 	adrp	x0, ffffffd610e8b000 <_etext+0xbb000>
+ffffffd6103658fc:	91154800 	add	x0, x0, #0x552
+ffffffd610365900:	528067a1 	mov	w1, #0x33d                 	// #829
+ffffffd610365904:	52800122 	mov	w2, #0x9                   	// #9
+ffffffd610365908:	aa1f03e3 	mov	x3, xzr
+ffffffd61036590c:	97f60612 	bl	ffffffd6100e7154 <warn_slowpath_fmt>
+ffffffd610365910:	b9424a68 	ldr	w8, [x19, #584]
+ffffffd610365914:	17ffffd6 	b	ffffffd61036586c <kill_ioctx+0x78>
+ffffffd610365918:	d0005920 	adrp	x0, ffffffd610e8b000 <_etext+0xbb000>
+ffffffd61036591c:	91154800 	add	x0, x0, #0x552
+ffffffd610365920:	52805681 	mov	w1, #0x2b4                 	// #692
+ffffffd610365924:	52800122 	mov	w2, #0x9                   	// #9
+ffffffd610365928:	aa1f03e3 	mov	x3, xzr
+ffffffd61036592c:	97f6060a 	bl	ffffffd6100e7154 <warn_slowpath_fmt>
+ffffffd610365930:	aa1f03e8 	mov	x8, xzr
+ffffffd610365934:	17ffffdf 	b	ffffffd6103658b0 <kill_ioctx+0xbc>

@@ -1,0 +1,6 @@
+{
+  "kernelRelease": "5.4.125-android11-2-g601513d4b115-ab5000001307",
+  "elfSha256": "013dd6aee9724e6f1f6de4f459a60568445c585e28920aae1fc8fec5579cf0da",
+  "command": "aarch64-linux-gnu-objdump -d --disassemble=kill_ioctx chiron-vmlinux.elf",
+  "disassemblySha256": "3f854fe4204b87ec9178671c2ce2919f8fd5f95e4416464eef9bec9536303f6a"
+}

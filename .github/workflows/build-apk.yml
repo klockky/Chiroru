@@ -1,0 +1,127 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android toolchain
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Kernel lifecycle host tests
+        run: |
+          mkdir -p /tmp/opencode
+          python3 tools/check-public-files.py
+          python3 -m unittest -v tools/test_lifecycle_events.py
+      - name: Build unsigned release and run checks
+        working-directory: app/Chiroru
+        run: >-
+          ./gradlew --no-daemon --console=plain --max-workers=2
+          -Pchiroru.unsigned=true
+          :app:assembleRelease :app:testDebugUnitTest :app:lintRelease
+          :app:testNativeProcessWait :app:testFirmwareCatalog
+          :app:testConsoleRunner :app:testProcessConsole
+      - name: Collect APK and R8 mapping
+        run: |
+          mkdir -p dist
+          cp app/Chiroru/app/build/outputs/apk/release/app-release-unsigned.apk dist/Chiroru-unsigned.apk
+          cp app/Chiroru/app/build/outputs/mapping/release/mapping.txt dist/mapping.txt
+          python3 tools/check-public-files.py dist/Chiroru-unsigned.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-output
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verification-reports
+          path: |
+            app/Chiroru/app/build/reports/
+            app/Chiroru/app/build/test-results/
+          retention-days: 14
+
+  sign:
+    name: Sign APK
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install signing tools
+        run: sdkmanager 'build-tools;36.0.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: build-output
+          path: unsigned
+      - name: Sign and verify
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_BASE64:?Missing signing secret}"
+          : "${KEY_ALIAS:?Missing key alias}"
+          : "${KEYSTORE_PASSWORD:?Missing keystore password}"
+          : "${KEY_PASSWORD:?Missing key password}"
+          umask 077
+          key="$RUNNER_TEMP/chiroru.keystore"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key"
+          mkdir -p signed
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/zipalign" -c -P 16 4 unsigned/Chiroru-unsigned.apk
+          "$tools/apksigner" sign --ks "$key" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
+            --out signed/Chiroru.apk unsigned/Chiroru-unsigned.apk
+          "$tools/apksigner" verify --verbose --print-certs signed/Chiroru.apk | tee signed/certificate.txt
+          grep -Fq 'Signer #1 certificate SHA-256 digest: 2226a9709e9602ca471bff474dacf94e4acf91935a552d4c80540c4f5fd5df03' signed/certificate.txt
+          cd signed
+          sha256sum Chiroru.apk > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Chiroru-apk
+          path: signed/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download instructions
+        run: echo 'Signed APK is available in **Artifacts → Chiroru-apk**. Certificate matches the installed Chiroru app.' >> "$GITHUB_STEP_SUMMARY"
