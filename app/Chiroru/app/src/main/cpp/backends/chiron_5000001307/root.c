@@ -591,6 +591,19 @@ static int run_proc(const char *path, char *const argv[], const char *label,
   return finish_process(pid, pfd[0], timeout_ms, out, sizeof out, label, r);
 }
 
+/* Called only after a successful bootstrap, with Enforcing already restored.
+ * Keep the grant fixed to this APK and permission; use the bounded native
+ * subprocess runner because only the bootstrap thread has root credentials. */
+void chiroru_grant_boot_adb_permission(struct rpt *r) {
+  if (getuid() != 0 || geteuid() != 0 || syscall(__NR_gettid) != getpid()) {
+    rp(r, "boot_adb: permission grant requires the root main thread\n");
+    return;
+  }
+  char *argv[] = {(char *)"pm", (char *)"grant", (char *)"--user", (char *)"0",
+      (char *)"dev.chiron.chiroru", (char *)"android.permission.WRITE_SECURE_SETTINGS", NULL};
+  run_proc("/system/bin/pm", argv, "boot_adb permission", 10000, r);
+}
+
 /* KernelSU restores Enforcing during insmod. Request its explicit root-domain
  * handoff in a child only; UID 0 by itself is not evidence of the KSU domain.
  * No global permissive window or app allowlist grant is needed for lifecycle. */

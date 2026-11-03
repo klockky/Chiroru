@@ -52,7 +52,7 @@ class ChiroruUiTest {
         compose.onNodeWithText("420 s after station startup").assertIsDisplayed()
         assertEquals(listOf(420), changes)
         assertEquals(emptyList<Boolean>(), bootChanges)
-        compose.onNode(isToggleable()).assertIsOff()
+        compose.onNode(isToggleable() and hasText("Load KernelSU automatically")).assertIsOff()
     }
 
     @Test fun methodSelectionOnlyChangesDescriptionAndSingleLaunchButton() {
@@ -257,7 +257,7 @@ class ChiroruUiTest {
         compose.onNodeWithText("Acquire root").performScrollTo().assertIsEnabled().performClick()
         assertEquals(listOf(Operation.ROOT), operations)
         compose.onNodeWithText("Settings").performClick()
-        compose.onNode(isToggleable()).performScrollTo().assertIsNotEnabled()
+        compose.onNode(isToggleable() and hasText("Load KernelSU automatically")).performScrollTo().assertIsNotEnabled()
     }
 
     @Test fun rootOnlyCanTurnOffAnExistingAutoloadPreference() {
@@ -266,8 +266,23 @@ class ChiroruUiTest {
             firmwareLabel = "Root-only fixture", firmwareSupport = FirmwareSupport.ROOT_ONLY, bootEnabled = true,
         ), setBoot = changes::add) } }
         compose.onNodeWithText("Settings").performClick()
-        compose.onNode(isToggleable()).performScrollTo().assertIsEnabled().performClick()
+        compose.onNode(isToggleable() and hasText("Load KernelSU automatically")).performScrollTo().assertIsEnabled().performClick()
         assertEquals(listOf(false), changes)
+    }
+
+    @Test fun bootAdbRequiresPermissionButNotKernelSuSupport() {
+        val changes = mutableListOf<Boolean>()
+        val state = mutableStateOf(AppState())
+        compose.setContent { ChiroruTheme { ChiroruScaffold(state.value,
+            initialTab = 2, setAdbOnBoot = changes::add) } }
+        val toggle = compose.onNode(isToggleable() and hasText("Enable ADB at startup"))
+        toggle.performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle { state.value = state.value.copy(adbSettingsPermission = true) }
+        toggle.performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf(true), changes)
+        compose.runOnIdle { state.value = state.value.copy(adbSettingsPermission = false, adbOnBoot = true) }
+        toggle.performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf(true, false), changes)
     }
 
     @Test fun rootOnlyStillRespectsTheKernelTouchedGuard() {

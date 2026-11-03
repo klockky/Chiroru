@@ -3,6 +3,17 @@
 #include "device_guard.h"
 #include <sys/system_properties.h>
 
+void chiroru_grant_boot_adb_permission(struct rpt *report);
+
+JNIEXPORT jstring JNICALL
+Java_dev_chiron_chiroru_NativeBridge_grantBootAdbPermission(JNIEnv *env, jclass cls) {
+  (void)cls;
+  char buf[4096] = {0};
+  struct rpt report = {buf, sizeof buf, 0};
+  chiroru_grant_boot_adb_permission(&report);
+  return (*env)->NewStringUTF(env, buf);
+}
+
 static int allowed_device(void) {
   char device[PROP_VALUE_MAX] = {0}, model[PROP_VALUE_MAX] = {0};
   __system_property_get("ro.product.device", device);

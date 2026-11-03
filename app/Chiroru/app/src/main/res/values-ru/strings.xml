@@ -129,4 +129,9 @@
     <string name="manager_bundled_ready">Совместимый factory armv7-менеджер установлен.</string>
     <string name="manager_bundled_conflict">Подпись или версия установленного менеджера не соответствует этой прошивке. Сохраните нужные настройки менеджера и устраните конфликт установки перед загрузкой KernelSU.</string>
     <string name="manager_bundled_unavailable">Не удалось проверить менеджер. Откройте Chiroru заново для повторной проверки.</string>
+    <string name="adb_on_boot">Включать ADB при загрузке</string>
+    <string name="adb_on_boot_description">Включать отладку Android при запуске станции независимо от KernelSU.</string>
+    <string name="adb_on_boot_hint">Действует со следующей загрузки. Не выдаёт root через ADB. Выключение отменяет будущий автозапуск, но не разрывает текущее подключение.</string>
+    <string name="adb_permission_needed">Разрешение выдаётся автоматически после успешного root через Chiroru. Можно выдать его с подключённого компьютера и проверить разрешение:</string>
+    <string name="adb_permission_check">Проверить разрешение</string>
 </resources>

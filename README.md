@@ -17,14 +17,15 @@ Root для Яндекс Станции Дуо Макс: консоль в пр�
 
 ## Установка
 
-Скачайте APK: [Actions → Build APK](https://github.com/klockky/Chiroru/actions/workflows/build-apk.yml)
-→ успешная сборка `main` → **Artifacts → Chiroru-apk**.
+Скачайте `Chiroru.apk` из [последнего релиза](https://github.com/klockky/Chiroru/releases/latest).
 
 Установите APK, выберите способ в настройках и нажмите **«Получить root»**.
 На factory сначала нажмите **«Установить совместимый менеджер»** для KernelSU.
 
 In-app root работает до закрытия процесса Chiroru, ADB root и KernelSU —
 до перезагрузки станции. Автозагрузка KernelSU включается в настройках.
+Там же можно включить ADB при загрузке; разрешение выдаётся автоматически
+после успешного root.
 
 ## Документация
 

@@ -45,7 +45,9 @@ import dev.chiron.chiroru.firmware.FirmwareSupport
 @Composable
 internal fun ChiroruApp(state: AppState, model: ChiroruViewModel) {
     val context = LocalContext.current
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.refreshBootReport(); model.refreshRuntime() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        model.refreshBootReport(); model.refreshRuntime(); model.refreshAdbPermission()
+    }
     ChiroruScaffold(
         state, model::run, model::setBootEnabled, model::setTheme,
         model::clearReport, model::refreshBootReport,
@@ -54,6 +56,8 @@ internal fun ChiroruApp(state: AppState, model: ChiroruViewModel) {
         restartConsole = { RestartActivity.restart(context) },
         setRootMethod = model::setRootMethod,
         setBootDelay = model::setBootDelay,
+        setAdbOnBoot = model::setAdbOnBoot,
+        refreshAdbPermission = model::refreshAdbPermission,
         installBundledManager = { model.installBundledManager(context) },
         initialTab = if ((context as? android.app.Activity)?.intent?.getBooleanExtra("open_console", false) == true) 3 else 0,
     )
@@ -76,6 +80,8 @@ internal fun ChiroruScaffold(
     setRootMethod: (RootMethod) -> Unit = {},
     setBootDelay: (Int) -> Unit = {},
     installBundledManager: () -> Unit = {},
+    setAdbOnBoot: (Boolean) -> Unit = {},
+    refreshAdbPermission: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     val screenStates = rememberSaveableStateHolder()
@@ -113,7 +119,8 @@ internal fun ChiroruScaffold(
                         0 -> HomeScreen(state, run, { tab = 1 }, retryManager, installBundledManager)
                         1 -> JournalScreen(state, clear, refresh)
                         3 -> ConsoleScreen(state, runConsole, stopConsole, clearConsole, restartConsole)
-                        else -> SettingsScreen(state, setBoot, setTheme, setRootMethod, setBootDelay)
+                        else -> SettingsScreen(state, setBoot, setTheme, setRootMethod, setBootDelay,
+                            setAdbOnBoot, refreshAdbPermission)
                     }
                 }
             }
@@ -369,7 +376,8 @@ private fun JournalScreen(state: AppState, clear: () -> Unit, refresh: () -> Uni
 
 @Composable
 private fun SettingsScreen(state: AppState, setBoot: (Boolean) -> Unit, setTheme: (String) -> Unit,
-    setRootMethod: (RootMethod) -> Unit, setBootDelay: (Int) -> Unit) {
+    setRootMethod: (RootMethod) -> Unit, setBootDelay: (Int) -> Unit,
+    setAdbOnBoot: (Boolean) -> Unit, refreshAdbPermission: () -> Unit) {
     var editingDelay by rememberSaveable { mutableStateOf(false) }
     if (editingDelay) BootDelayDialog(state.bootDelaySeconds,
         onDismiss = { editingDelay = false }, onSave = { setBootDelay(it); editingDelay = false })
@@ -434,6 +442,17 @@ private fun SettingsScreen(state: AppState, setBoot: (Boolean) -> Unit, setTheme
                 Text(stringResource(R.string.autoload_requires_kernelsu), style = MaterialTheme.typography.bodySmall)
             }
             Text(stringResource(R.string.autoload_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SettingSwitch(R.string.adb_on_boot, R.string.adb_on_boot_description, state.adbOnBoot, setAdbOnBoot,
+                enabled = state.adbSettingsPermission || state.adbOnBoot)
+            Text(stringResource(R.string.adb_on_boot_hint), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!state.adbSettingsPermission) {
+                Text(stringResource(R.string.adb_permission_needed), style = MaterialTheme.typography.bodySmall)
+                SelectionContainer {
+                    Text(BootAdb.GRANT_COMMAND, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+                TextButton(onClick = refreshAdbPermission) { Text(stringResource(R.string.adb_permission_check)) }
+            }
         }
     }
 }

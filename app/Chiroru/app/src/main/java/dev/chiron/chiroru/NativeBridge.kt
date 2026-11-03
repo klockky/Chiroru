@@ -13,5 +13,6 @@ internal object NativeBridge {
     @JvmStatic external fun processConsolePresent(): Boolean
     @JvmStatic external fun startProcessConsole(command: ByteArray): IntArray?
     @JvmStatic external fun probe(backendId: String): String
+    @JvmStatic external fun grantBootAdbPermission(): String
     @JvmStatic external fun exploit(backendId: String, koPath: String?, ksudPath: String?, runHooks: Boolean): String
 }

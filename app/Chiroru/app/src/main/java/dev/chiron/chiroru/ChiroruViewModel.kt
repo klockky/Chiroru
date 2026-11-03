@@ -26,6 +26,8 @@ internal data class AppState(
     val report: String = "",
     val bootReport: String = "",
     val bootEnabled: Boolean = false,
+    val adbOnBoot: Boolean = false,
+    val adbSettingsPermission: Boolean = false,
     val bootDelaySeconds: Int = BootDelay.DEFAULT_SECONDS,
     val theme: String = "system",
     val managerStep: ManagerStep? = null,
@@ -50,6 +52,8 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     private val firmware = FirmwareEnvironment.inspect(application)
     private val mutableState = MutableStateFlow(AppState(
         bootEnabled = preferences.bootEnabled,
+        adbOnBoot = preferences.adbOnBoot,
+        adbSettingsPermission = BootAdb.hasPermission(application),
         bootDelaySeconds = preferences.bootDelaySeconds,
         theme = preferences.theme,
         rootMethod = preferences.rootMethod,
@@ -124,6 +128,7 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
                 )
             }
             if (ManagerInstaller.shouldRun(operation, report)) ensureManager()
+            refreshAdbPermission()
             refreshRuntime()
         }
     }
@@ -167,6 +172,17 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     fun setTheme(theme: String) {
         preferences.theme = theme
         mutableState.update { it.copy(theme = theme) }
+    }
+
+    fun setAdbOnBoot(enabled: Boolean) {
+        val granted = BootAdb.hasPermission(getApplication())
+        if (!enabled || granted) preferences.adbOnBoot = enabled
+        mutableState.update { it.copy(adbOnBoot = preferences.adbOnBoot, adbSettingsPermission = granted) }
+    }
+
+    fun refreshAdbPermission() {
+        mutableState.update { it.copy(adbOnBoot = preferences.adbOnBoot,
+            adbSettingsPermission = BootAdb.hasPermission(getApplication())) }
     }
 
     fun setBootDelay(seconds: Int) {

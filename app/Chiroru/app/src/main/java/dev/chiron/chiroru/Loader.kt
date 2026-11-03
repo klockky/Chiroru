@@ -49,8 +49,9 @@ internal object Loader {
             val result = ReportResult.parse(operation, report)
             kernelTouched = kernelTouched || result.kernelTouched
             if (result.moduleLoaded) moduleOutcome = result.outcome
-            Log.i(TAG, report)
-            report
+            val completeReport = report + BootAdb.grantAfterRoot(context, result.outcome)
+            Log.i(TAG, completeReport)
+            completeReport
         } catch (error: Exception) {
             Log.e(TAG, "Native operation failed", error)
             "native call failed: $error"

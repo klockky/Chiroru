@@ -12,6 +12,10 @@ internal class AppPreferences(context: Context) {
         get() = preferences.getBoolean("boot_enabled", false)
         set(value) { preferences.edit { putBoolean("boot_enabled", value) } }
 
+    var adbOnBoot: Boolean
+        get() = preferences.getBoolean("adb_on_boot", false)
+        set(value) { preferences.edit { putBoolean("adb_on_boot", value) } }
+
     var bootDelaySeconds: Int
         get() = preferences.getInt("boot_delay_seconds", BootDelay.DEFAULT_SECONDS)
             .takeIf { it in 0..BootDelay.MAX_SECONDS } ?: BootDelay.DEFAULT_SECONDS
