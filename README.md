@@ -63,7 +63,9 @@ native-компоненты; `kernelsu.ko`, `chiroru_adb.ko`, `ksud` и `chiroru
 из проверенных ресурсов, их SHA-256 проверяется перед сборкой.
 Полная пересборка kernel-модулей требует отдельно подготовленного vendor kernel
 build tree; его конфигурация и бинарные device evidence в этот checkout не входят.
-См. [SOURCES.md](app/Chiroru/SOURCES.md) и [vendor provenance](linux-txn/README.md).
+Скрипты сборки `chiroru_adb.ko` и `kernelsu.ko` для всех трёх прошивок,
+требования к заголовкам и команды: [KERNEL_MODULES.md](tools/KERNEL_MODULES.md).
+См. также [SOURCES.md](app/Chiroru/SOURCES.md) и [vendor provenance](linux-txn/README.md).
 
 Проверка AIO использует сохранённый дизассемблированный `kill_ioctx` с хешами
 исходного ELF и выдержки. Для проверки полного локального ELF задайте

@@ -41,7 +41,7 @@ jobs:
         run: |
           mkdir -p /tmp/opencode
           python3 tools/check-public-files.py
-          python3 -m unittest -v tools/test_lifecycle_events.py
+          python3 -m unittest -v tools/test_lifecycle_events.py tools/test_kernel_module_build.py
       - name: Build unsigned release and run checks
         working-directory: app/Chiroru
         run: >-

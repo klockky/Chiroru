@@ -11,6 +11,11 @@
 #include "../uapi.h"
 #include "klog.h"
 
+/* The profile builder supplies this at compile time, before stripping. */
+#ifndef CHIRORU_KERNEL_RELEASE
+#define CHIRORU_KERNEL_RELEASE "5.4.125-android11-2-g601513d4b115-ab5000001307"
+#endif
+
 extern int chiroru_adb_policy(void);
 static u32 root_sid, shell_sid;
 static unsigned int console_uid;
@@ -94,7 +99,7 @@ static int __init adb_init(void)
     /* The policy ABI adapters and native loader symbols are exact-build only. */
     /* Do not use utsname(): task->nsproxy is at 1784 in the vendor binary,
      * versus 1800 in the prepared headers. init_uts_ns is an exported object. */
-    if (strcmp(init_utsname()->release, "5.4.125-android11-2-g601513d4b115-ab5000001307"))
+    if (strcmp(init_utsname()->release, CHIRORU_KERNEL_RELEASE))
         return -EOPNOTSUPP;
     BUILD_BUG_ON(offsetof(struct cred, security) != 0x78);
     BUILD_BUG_ON(offsetof(struct cred, uid) != 4);

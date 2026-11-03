@@ -28,31 +28,24 @@ The factory kernel's `factory-mali.ko` carries the same `module_layout` value.
 
 ## Build
 
-The exact factory source commit (`g85fe5498964f`) is not available on the
-station. The module is a cross-build against the prepared 5.4.125 headers used
-for the verified `5000001307` modules:
+The module is a cross-build against the prepared 5.4.125 headers used for the
+verified modules. See [kernel module builds](../tools/KERNEL_MODULES.md) for
+the external inputs, checks and all three firmware profiles. From the root:
 
 ```sh
-cp -a <prepared-linux-txn> /tmp/linux-txn-factory
-printf '5.4.125-android11-2-g85fe5498964f-ab1982735225\n' \
-    > /tmp/linux-txn-factory/include/config/kernel.release
-printf '#define UTS_RELEASE "5.4.125-android11-2-g85fe5498964f-ab1982735225"\n' \
-    > /tmp/linux-txn-factory/include/generated/utsrelease.h
-make -C /tmp/linux-txn-factory M="$PWD/adb-root/module" ARCH=arm64 \
-    CROSS_COMPILE=aarch64-linux-gnu- KBUILD_MODPOST_WARN=1 modules
+python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel \
+    /tmp/opencode/factory-adb --module adb
 ```
 
-`main.c` hard-codes the `5000001307` release guard. For the factory artifact the
-same-length string in the built `.ko` is replaced with
-`5.4.125-android11-2-g85fe5498964f-ab1982735225`, then the debug info is
-stripped. The runtime checks (`module_layout`, `BUILD_BUG_ON` for `cred`,
-`task_struct`, `file`) are unchanged.
+The builder selects the exact release guard at compile time through
+`CHIRORU_KERNEL_RELEASE`, then verifies it in the output ELF along with
+vermagic and `module_layout`. No post-build string replacement is required.
 
-Client:
+To build both the module and its static ARMv7 client with NDK r28c:
 
 ```sh
-armv7a-linux-androideabi30-clang -static -O2 adb-root/client.c -o chiroru-su
-llvm-strip --strip-debug chiroru-su
+ANDROID_NDK_HOME=/path/to/android-ndk \
+    bash adb-root/build.sh 1982735225 /path/to/prepared-kernel /tmp/opencode/factory-adb-client
 ```
 
 ## Runtime addresses

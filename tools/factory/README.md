@@ -51,15 +51,19 @@ claim to possess the exact factory kernel source. Its vermagic and
 
 ### Kernel module
 
-Provide the prepared factory module header tree (see also
-`adb-root/FACTORY-MODULE.md`), then run from the repository root:
+Provide a verified prepared module header tree (see
+[kernel module builds](../KERNEL_MODULES.md) and `adb-root/FACTORY-MODULE.md`),
+then run from the repository root:
 
 ```sh
 bash tools/factory/build-module.sh /path/to/factory-headers /tmp/opencode/factory-module-new
 ```
 
-The script copies tracked `build-txn` source, applies `kernel.patch`, builds,
-and strips debug information while verifying runtime sections and relocations.
+The script delegates to the shared profile builder: it copies the prepared
+headers and tracked source, sets the factory release in that copy, applies
+`kernel.patch`, builds, and strips debug information while verifying runtime
+sections and relocations. Results include `kernelsu.ko`, its compatibility
+alias `kernelsu-factory.ko`, `SHA256SUMS` and `build-info.json`.
 Set `KSU_NEXT_MANAGER_SIZE` and `KSU_NEXT_MANAGER_HASH` when using your own
 manager signing certificate. Re-pin the resulting asset in `profiles.json`,
 including the manager APK hash, certificate and version in `kernelSu.manager`.

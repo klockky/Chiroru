@@ -1,4 +1,4 @@
-# Chiroru ADB root — chiron 5000001307
+# Chiroru ADB root — три точных профиля chiron
 
 Независимый от загруженного KernelSU режим для консоли с компьютера и из приложения.
 В Chiroru 0.6.0 выберите **«Включить root для ADB»**, затем откройте вкладку
@@ -62,10 +62,11 @@ UID 2000. `exit` завершает root-консоль. Модуль работ
 
 ## Сборка и проверки
 
-Из корня `duomax-ksu`:
+Из корня `Chiroru` (подготовленные заголовки и все профили описаны в
+[инструкции сборки модулей](../tools/KERNEL_MODULES.md)):
 
 ```sh
-bash adb-root/build.sh
+bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/adb-1245
 python3 adb-root/test_abi.py
 python3 tools/policy_host/build.py --out /tmp/opencode/adb-policy-host \
   --test-source adb-root/test_policy.c
@@ -73,12 +74,13 @@ adb pull /odm/etc/selinux/precompiled_sepolicy /tmp/opencode/chiron-stock-policy
 /tmp/opencode/adb-policy-host/test-policy /tmp/opencode/chiron-stock-policy.bin
 ```
 
-Нужны подготовленный `linux-txn`, GCC ARM64 и NDK 28.2.13676358. Проверки используют
+Нужны внешнее подготовленное дерево ядра, GCC ARM64 и NDK 28.2.13676358. ABI-проверки используют
 сохранённый vendor ELF, закреплённый SHA-256. Исходники библиотеки и адаптеры
 проверяются `gen_policy_writer.py --check`, конфигурация preemption — отдельным
-проверяющим скриптом. Готовые файлы находятся в `out/`; для APK их копируют в
-`app/Chiroru/app/src/main/assets/{firmware/chiron-5000001307,common}` и обновляют
-SHA-256 блока `adbRoot` в каталоге. Валидатор APK сверяет все три ресурса.
+проверяющим скриптом. Готовые файлы находятся в заданном каталоге результата;
+для APK модуль копируют в `app/Chiroru/app/src/main/assets/firmware/chiron-BUILD/`,
+клиент — по пути соответствующего профиля, затем обновляют SHA-256 блока
+`adbRoot` в каталоге. Валидатор APK сверяет все три ресурса.
 
 `test_client.c` — отдельный on-device тест, запускаемый именно от обычного shell
 после активации модуля. Он проверяет read-only ioctl, неизвестные команды,

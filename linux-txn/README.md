@@ -14,3 +14,6 @@ These are build inputs for the userspace policy parser/writer, not a complete
 kernel build tree. The Android context hash backport is applied by the checked
 `build-txn/selinux/chiron_context.h` adapter. Exact runtime compatibility is
 limited to the firmware profile in the app's catalog.
+
+For the external prepared tree requirements and profile-specific module build
+commands, see [KERNEL_MODULES.md](../tools/KERNEL_MODULES.md).

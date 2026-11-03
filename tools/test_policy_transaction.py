@@ -1,30 +1,42 @@
 """Binary/dependency checks complement the executable host policy tests."""
 import importlib.util
 import hashlib
+import os
 import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+WORK = Path(os.environ.get("CHIRORU_MODULE_WORK", ROOT))
+HEADERS = WORK / "headers" if "CHIRORU_MODULE_WORK" in os.environ else ROOT / "linux-txn"
 
 
 def undefined(obj):
     output = subprocess.check_output(
-        ["aarch64-linux-gnu-nm", "-u", str(ROOT / obj)], text=True)
+        ["aarch64-linux-gnu-nm", "-u", str(WORK / obj)], text=True)
     return {line.split()[-1] for line in output.splitlines() if line.strip()}
 
 
 class TransactionBinaryTest(unittest.TestCase):
     def test_no_preemption_counter_stubs(self):
         output = subprocess.check_output(
-            ["aarch64-linux-gnu-nm", str(ROOT / "build-txn/kernelsu.ko")], text=True)
+            ["aarch64-linux-gnu-nm", str(WORK / "build-txn/kernelsu.ko")], text=True)
         names = {line.split()[-1] for line in output.splitlines() if line.strip()}
         self.assertFalse(names & {"preempt_count_add", "preempt_count_sub"})
-        header = (ROOT / "linux-txn/include/generated/autoconf.h").read_text()
+        header = (HEADERS / "include/generated/autoconf.h").read_text()
         self.assertNotIn("#define CONFIG_DEBUG_PREEMPT 1", header)
 
+    def test_module_uses_vendor_selinuxfs_offset(self):
+        module = subprocess.check_output(
+            ["aarch64-linux-gnu-objdump", "-d", str(WORK / "build-txn/selinux/policy_transaction.o")],
+            text=True)
+        self.assertIn("#968]", module)
+        self.assertNotIn("#952]", module)
+
     def test_vendor_selinuxfs_accessor_matches_binary(self):
-        elf = ROOT.parent / "duomax-cve-2022-36449/evidence/ondevice/chiron-vmlinux.elf"
+        if "CHIRORU_KERNEL_ELF" not in os.environ:
+            self.skipTest("Set CHIRORU_KERNEL_ELF for the optional full vendor ELF check")
+        elf = Path(os.environ["CHIRORU_KERNEL_ELF"])
         self.assertEqual(hashlib.sha256(elf.read_bytes()).hexdigest(),
                          "013dd6aee9724e6f1f6de4f459a60568445c585e28920aae1fc8fec5579cf0da")
         disasm = subprocess.check_output(
@@ -34,11 +46,6 @@ class TransactionBinaryTest(unittest.TestCase):
                             "ldr\tx22, [x8, #968]", "add\tx19, x22, #0x40",
                             "ldr\tx0, [x22, #104]"):
             self.assertIn(instruction, disasm)
-        module = subprocess.check_output(
-            ["aarch64-linux-gnu-objdump", "-d", str(ROOT / "build-txn/selinux/policy_transaction.o")],
-            text=True)
-        self.assertIn("#968]", module)
-        self.assertNotIn("#952]", module)
         isids = subprocess.check_output(
             ["aarch64-linux-gnu-objdump", "-d", "--disassemble=policydb_load_isids", str(elf)], text=True)
         for instruction in ("ldr\tw8, [x22, #40]!", "ldr\tw8, [x23, #200]",
@@ -80,7 +87,7 @@ class TransactionBinaryTest(unittest.TestCase):
             "preempt_check", ROOT / "tools/check-kernel-preempt-config.py")
         checker = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(checker)
-        tree = ROOT / "linux-txn"
+        tree = HEADERS
         self.assertEqual(checker.check((tree / "include/config/auto.conf").read_text(),
                                       (tree / "include/generated/autoconf.h").read_text()), [])
 
