@@ -32,6 +32,9 @@ Chiroru/
 `assets/firmware/chiron-5000001307/kernelsu.ko` — проверенная на chiron 5000001307 транзакционная сборка
 `duomax-ksu/kernelsu-policy-transaction.ko` из `build-txn/`, SHA-256
 `b4a66c69cd199276f363ff8f26deec7c5d0057b4b004a1ba50c737f4e5ca6088`.
+`assets/firmware/chiron-5000001245/` содержит ту же транзакционную сборку,
+пересобранную под vermagic `…ab5000001245`, и `chiroru_adb.ko` для этого
+ядра; layout ядра совпадает с `5000001307` (см. [FIRMWARE.md](FIRMWARE.md)).
 Публикуемый модуль очищен `tools/sanitize-module.py`: удалены debug-секции,
 пути сборочной машины в диагностических строках заменены на `/src/build-txn/…`.
 Ведущие `/` сохраняют длины строк и смещения суффиксов. Скрипт сверяет runtime
@@ -67,7 +70,7 @@ Gradle Wrapper скопирован из существующего Gradle-пр�
 
 `ManagerReleases`, `ManagerProvisioning` и `ManagerInstaller` проверяют наличие KSU Next
 Manager, выбирают и проверяют официальный GitHub release v3.4.2 для `5000001307`
-и устанавливают отсутствующий пакет после загрузки KernelSU. `ManagerPackages`
+и `5000001245`, устанавливают отсутствующий пакет после загрузки KernelSU. `ManagerPackages`
 проверяет profile-specific подпись; встроенный factory APK устанавливается
 системным установщиком до root через ограниченный FileProvider. `AppIo` сохраняет открытые дескрипторы для скачивания
 и boot-отчёта до смены credentials. Нативные исходники этой функцией не меняются.

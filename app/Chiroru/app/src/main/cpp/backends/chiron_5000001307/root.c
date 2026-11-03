@@ -149,6 +149,19 @@ static const struct chiroru_vendor_sym vendor_syms_1982735225[] = {
     {"compat_sys_call_table", 0xEF2FD0ULL},
 };
 
+/* 5000001245 differs from 5000001307 in exactly one data offset: its
+ * sys_call_table starts 0x18 bytes later.  Reading the image at 0xEEE700
+ * yields io_setup at slot 0, faccessat at 48, reboot at 142, setresuid at 147,
+ * execve at 221 and execveat at 281; the 1307 value would hook three
+ * neighbouring syscalls instead.  Text layout and the other three data
+ * symbols are identical. */
+static const struct chiroru_vendor_sym vendor_syms_5000001245[] = {
+    {"selinux_state", 0x147CB10ULL},
+    {"selinux_blob_sizes", 0xFE2784ULL},
+    {"sys_call_table", 0xEEE700ULL},
+    {"init_mm", 0x12BE860ULL},
+};
+
 /* 1982735225 (factory, Android 11, 5.4.125-ab1982735225, 32-bit userspace).
  * Symbol addresses were recovered from the verified factory image:
  *   init_task           image+0x1277480 -> PA 0x22f7480
@@ -173,6 +186,27 @@ static const struct chiroru_profile profile_1982735225 = {
     .direct_ksu = 1,
     .vendor_count = 5,
     .vendor = vendor_syms_1982735225,
+};
+
+/* 5000001245 (Android 11, 5.4.125-ab5000001245, 64-bit userspace).
+ * Built from the same kernel commit as 5000001307.  The full 21721088-byte
+ * image was read back and every one of the 43482 common text symbols has the
+ * same offset from _stext; init_task at PA 0x22f7500 and selinux_state at
+ * PA 0x24fd000 were checked in place.  Only sys_call_table moved (+0x18),
+ * so the profile carries its own vendor array. */
+static const struct chiroru_profile profile_5000001245 = {
+    .id = "chiron-5000001245",
+    .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001245:user/dev-keys",
+    .incremental = "5000001245",
+    .kernel_release = "5.4.125-android11-2-g601513d4b115-ab5000001245",
+    .machine = "aarch64",
+    .image_pa = 0x1080000ULL,
+    .init_task_pa = 0x22f7500ULL,   /* page 0x22f7000, tasks.next at 0x918 */
+    .use_magic_lbase = 1,
+    .lbase_magic = 0x56110418ULL,
+    .modules_supported = 1,
+    .vendor_count = 4,
+    .vendor = vendor_syms_5000001245,
 };
 #define WALK_SUB       T_TASKS      /* va -> task_struct                    */
 #define WALK_PREV_OFF  T_TASKS_PREV /* where the walk reads the next va     */
@@ -863,7 +897,7 @@ static int load_module(void *kbuf, size_t ksize, const char *ko_path,
         return 0;
       }
       if (rc == 0 && run_hooks) {
-        rc = run_lifecycle_as_ksu(NULL, r);
+        rc = run_lifecycle_as_ksu(ksud_path, r);
         rp(r, "lifecycle: status=%s\n", rc == 0 ? "complete" : "failed");
       } else if (rc == 0) {
         rp(r, "lifecycle hooks explicitly skipped\n");
@@ -1487,6 +1521,11 @@ int chiron_1982735225_root(const char *ko_path, const char *ksud_path,
   return chiroru_root_with(&profile_1982735225, ko_path, ksud_path, run_hooks, r);
 }
 
+int chiron_5000001245_root(const char *ko_path, const char *ksud_path,
+                           int run_hooks, struct rpt *r) {
+  return chiroru_root_with(&profile_5000001245, ko_path, ksud_path, run_hooks, r);
+}
+
 const char *chiron_1982735225_probe(void) {
   static char out[6144];
   char fp[192] = {0}, inc[96] = {0};
@@ -1538,6 +1577,22 @@ int chiron_5000001307_adb_root(const char *ko, const char *loader, int hooks, st
   if (snprintf(adb_console_params, sizeof adb_console_params,
                "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
   return chiroru_root_with(&profile_5000001307, ko, loader, -1, r);
+}
+
+int chiron_5000001245_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
+  (void)hooks;
+  if (!ko || !loader) { rp(r, "preflight: blocked (ADB module and loader required)\n"); return -1; }
+  char context[160] = {0};
+  int uid = adb_app_identity(r);
+  if (uid < 0) return -1;
+  int fd = open("/proc/self/attr/current", O_RDONLY | O_CLOEXEC);
+  ssize_t n = fd < 0 ? -1 : read(fd, context, sizeof context - 1);
+  if (fd >= 0) close(fd);
+  if (n <= 0) return -1;
+  context[strcspn(context, "\n")] = 0;
+  if (snprintf(adb_console_params, sizeof adb_console_params,
+               "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
+  return chiroru_root_with(&profile_5000001245, ko, loader, -1, r);
 }
 
 int chiron_1982735225_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
