@@ -1,0 +1,94 @@
+diff --git a/manager/build.gradle.kts b/manager/build.gradle.kts
+index 6fa6a0f..efb781c 100644
+--- a/manager/build.gradle.kts
++++ b/manager/build.gradle.kts
+@@ -18,7 +18,7 @@ cmaker {
+                 "-DANDROID_STL=none",
+             )
+         )
+-        abiFilters("arm64-v8a", "x86_64", "riscv64")
++        abiFilters("armeabi-v7a")
+     }
+     buildTypes {
+         if (it.name == "release") {
+@@ -31,7 +31,7 @@ val androidMinSdkVersion = 26
+ val androidTargetSdkVersion = 36
+ val androidCompileSdkVersion = 36
+ val androidBuildToolsVersion = "36.1.0"
+-val androidCompileNdkVersion by extra(libs.versions.ndk.get())
++val androidCompileNdkVersion by extra(System.getenv("CHIRORU_NDK") ?: libs.versions.ndk.get())
+ val androidSourceCompatibility = JavaVersion.VERSION_21
+ val androidTargetCompatibility = JavaVersion.VERSION_21
+ val managerVersionCode by extra(getVersionCode())
+@@ -71,7 +71,7 @@ subprojects {
+                     versionName = managerVersionName
+                 }
+                 ndk {
+-                    abiFilters += listOf("arm64-v8a", "x86_64", "riscv64")
++                    abiFilters += listOf("armeabi-v7a")
+                 }
+             }
+ 
+diff --git a/userspace/ksud/src/assets.rs b/userspace/ksud/src/assets.rs
+index 9b183b1..6f20591 100644
+--- a/userspace/ksud/src/assets.rs
++++ b/userspace/ksud/src/assets.rs
+@@ -45,6 +45,11 @@ struct Asset;
+ #[folder = "bin/aarch64"]
+ struct Asset;
+ 
++#[cfg(all(target_arch = "arm", target_os = "android"))]
++#[derive(RustEmbed)]
++#[folder = "bin/armv7"]
++struct Asset;
++
+ #[cfg(all(target_arch = "riscv64", target_os = "android"))]
+ #[derive(RustEmbed)]
+ #[folder = "bin/riscv64"]
+diff --git a/userspace/ksud/src/ksucalls.rs b/userspace/ksud/src/ksucalls.rs
+index 82da3b6..797132f 100644
+--- a/userspace/ksud/src/ksucalls.rs
++++ b/userspace/ksud/src/ksucalls.rs
+@@ -51,6 +51,10 @@ extern "C" fn sigsys_handler(
+         {
+             (*ucontext).uc_mcontext.regs[0] = (-libc::EPERM) as u64;
+         }
++        #[cfg(target_arch = "arm")]
++        {
++            (*ucontext).uc_mcontext.arm_r0 = (-libc::EPERM) as libc::c_ulong;
++        }
+         #[cfg(target_arch = "x86_64")]
+         {
+             let rax = libc::REG_RAX as usize;
+diff --git a/userspace/ksud/src/module.rs b/userspace/ksud/src/module.rs
+index b91e424..80bd186 100644
+--- a/userspace/ksud/src/module.rs
++++ b/userspace/ksud/src/module.rs
+@@ -233,7 +233,7 @@ impl SigchldBlock {
+             }
+             let timeout = libc::timespec {
+                 tv_sec: remaining.as_secs() as libc::time_t,
+-                tv_nsec: remaining.subsec_nanos().into(),
++                tv_nsec: remaining.subsec_nanos() as _,
+             };
+             // SIGCHLD stays blocked between waitpid and sigtimedwait to avoid lost wakeups.
+             if unsafe {
+@@ -530,6 +530,11 @@ fn collect_rc_files<P: AsRef<Path>>(
+ /// module. The kernel-side read hook splices this file into init.rc on the
+ /// next boot.
+ pub fn regenerate_preinit_rc() -> Result<()> {
++    // A late-loaded, non-persistent driver cannot consume next-boot initrc.
++    // Keep this mode's module state under /data/adb.
++    if ksucalls::is_late_load() {
++        return Ok(());
++    }
+     let preinit_str = preinit_ksu_dir();
+     let preinit_dir = Path::new(preinit_str);
+     std::fs::create_dir_all(preinit_dir)
+@@ -1177,4 +1182,4 @@ pub fn get_managed_features() -> Result<HashMap<String, Vec<String>>> {
+     })?;
+ 
+     Ok(managed_features_map)
+-}
+\ No newline at end of file
++}

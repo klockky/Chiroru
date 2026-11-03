@@ -32,6 +32,8 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install Android toolchain
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Install 32-bit host test toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
       - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
@@ -48,12 +50,14 @@ jobs:
           :app:assembleRelease :app:testDebugUnitTest :app:lintRelease
           :app:testNativeProcessWait :app:testFirmwareCatalog
           :app:testConsoleRunner :app:testProcessConsole
+          :app:testPolicyHostCompat
       - name: Collect APK and R8 mapping
         run: |
           mkdir -p dist
           cp app/Chiroru/app/build/outputs/apk/release/app-release-unsigned.apk dist/Chiroru-unsigned.apk
           cp app/Chiroru/app/build/outputs/mapping/release/mapping.txt dist/mapping.txt
           python3 tools/check-public-files.py dist/Chiroru-unsigned.apk
+          python3 app/Chiroru/app/scripts/verify_release_apk.py dist/Chiroru-unsigned.apk
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-output

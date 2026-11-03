@@ -61,4 +61,15 @@ class RootMethodTest {
             RootMethod.entries.forEach { assertFalse(it.canRun(state)) }
         }
     }
+
+    @Test fun factoryManagerPrerequisiteOnlyBlocksKernelSu() {
+        BundledManagerState.entries.forEach { manager ->
+            val state = supported.copy(bundledManager = manager)
+            assertEquals(manager == BundledManagerState.READY, RootMethod.KERNEL_SU.canRun(state))
+            assertTrue(RootMethod.IN_APP.canRun(state))
+            assertTrue(RootMethod.ADB.canRun(state))
+            assertTrue(RootMethod.PROBE.canRun(state))
+        }
+        RootMethod.entries.forEach { assertFalse(it.canRun(supported.copy(preparingManager = true))) }
+    }
 }

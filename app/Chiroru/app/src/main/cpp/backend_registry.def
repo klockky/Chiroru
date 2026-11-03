@@ -1,3 +1,5 @@
 /* Explicit compiled backends; referenced by firmware/profiles.json. */
 CHIRORU_BACKEND("chiron-5000001307", mali_jm_probe, chiron_5000001307_root)
 CHIRORU_BACKEND("chiron-5000001307-adb", mali_jm_probe, chiron_5000001307_adb_root)
+CHIRORU_BACKEND("chiron-1982735225", chiron_1982735225_probe, chiron_1982735225_root)
+CHIRORU_BACKEND("chiron-1982735225-adb", chiron_1982735225_probe, chiron_1982735225_adb_root)

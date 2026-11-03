@@ -1,8 +1,12 @@
 package dev.chiron.chiroru
 
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
 import android.system.Os
+import dev.chiron.chiroru.firmware.FirmwareEnvironment
+import dev.chiron.chiroru.firmware.ManagerSource
+import dev.chiron.chiroru.firmware.FirmwareAssets
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -46,7 +50,46 @@ class ManagerDeviceTest {
         assertEquals(listOf(ManagerStep.CHECKING, ManagerStep.ALREADY_INSTALLED), states)
     }
 
+    @Test fun bundledManagerMatchesItsProfileAndInstalledCertificateWithoutRoot() {
+        val selection = FirmwareEnvironment.inspect(context)
+        val profile = checkNotNull(selection.profile)
+        val manager = checkNotNull(profile.kernelSu).manager
+        assumeTrue(manager.source == ManagerSource.BUNDLED)
+        val file = java.io.File(FirmwareAssets(context.cacheDir) { context.assets.open(it) }.prepareManager(profile))
+        try {
+            val info = checkNotNull(context.packageManager.getPackageArchiveInfo(file.path,
+                PackageManager.GET_SIGNING_CERTIFICATES))
+            assertTrue(ManagerPackages.accepts(info, manager))
+            assertEquals(30046L, info.longVersionCode)
+            assertEquals(context.applicationInfo.uid, Os.getuid())
+        } finally { file.delete() }
+    }
+
+    @Test fun bundledInstallerUsesReadableContentUriAndNeverStartsRoot() {
+        assumeTrue(context.packageName.endsWith(".preflight"))
+        assumeTrue(FirmwareEnvironment.inspect(context).profile?.kernelSu?.manager?.source == ManagerSource.BUNDLED)
+        // Set this on the disposable package via adb before instrumentation:
+        // Android kills an app when this app-op changes during a running test.
+        assumeTrue("Grant REQUEST_INSTALL_PACKAGES before running this test",
+            context.packageManager.canRequestPackageInstalls())
+        val intent = ManagerPackages.installIntent(context)
+        assertEquals(Intent.ACTION_VIEW, intent.action)
+        assertEquals("application/vnd.android.package-archive", intent.type)
+        assertEquals("content", intent.data?.scheme)
+        assertEquals("${context.packageName}.manager", intent.data?.authority)
+        assertTrue(intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+        assertNotNull(intent.resolveActivity(context.packageManager))
+        context.contentResolver.openInputStream(checkNotNull(intent.data))!!.use {
+            assertEquals('P'.code, it.read())
+            assertEquals('K'.code, it.read())
+        }
+        assertEquals(context.applicationInfo.uid, Os.getuid())
+        assertFalse(Loader.kernelTouched)
+    }
+
     @Test fun downloadedApkCanBeVerifiedAndStreamedWithoutDirectoryAccess() = runBlocking {
+        assumeTrue("Official manager belongs only to its selected firmware",
+            FirmwareEnvironment.inspect(context).profile?.kernelSu?.manager?.source == ManagerSource.OFFICIAL_RELEASE)
         val backend = ManagerInstaller.AndroidBackend(context, AppIo.dispatcher)
         val downloaded = backend.download()
         val directory = java.io.File(Loader.storage(context).cacheDir, "manager")

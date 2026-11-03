@@ -45,6 +45,17 @@ class ReportResultTest {
         assertEquals(Outcome.ERROR, ReportResult.parse(Operation.MODULE, "ksud rc=0 out=loaded\n").outcome)
     }
 
+    @Test fun directFactoryLoadRequiresRootAndPreservesLifecycleFailure() {
+        val loaded = "module: kernelsu loaded\n"
+        assertEquals(Outcome.ERROR, ReportResult.parse(Operation.MODULE, loaded).outcome)
+        val rooted = "root_stage_done uid=0 euid=0\n" + loaded
+        assertEquals(Outcome.MODULE_LOADED, ReportResult.parse(Operation.MODULE, rooted).outcome)
+        assertEquals(Outcome.MODULE_HOOKS_FAILED, ReportResult.parse(Operation.MODULE,
+            rooted + "lifecycle: status=failed\n").outcome)
+        assertFalse(ReportResult.parse(Operation.MODULE,
+            "root_stage_done uid=0 euid=0\nfactory KSU: init_module errno=129\n").moduleLoaded)
+    }
+
     @Test fun rootMarkerRequiresZeroIds() {
         assertEquals(Outcome.ROOT_READY, ReportResult.parse(Operation.ROOT, "root_stage_done uid=0 euid=0\nroot_console: ready\n").outcome)
         assertEquals(Outcome.ERROR, ReportResult.parse(Operation.ROOT, "root_stage_done uid=0 euid=0\nroot_console: live verification failed\n").outcome)

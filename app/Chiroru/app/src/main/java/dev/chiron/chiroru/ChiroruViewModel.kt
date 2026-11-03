@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.chiron.chiroru.firmware.FirmwareEnvironment
 import dev.chiron.chiroru.firmware.FirmwareSupport
+import dev.chiron.chiroru.firmware.ManagerSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +40,9 @@ internal data class AppState(
     val processConsoleAvailable: Boolean = false,
     val rootMethod: RootMethod = RootMethod.KERNEL_SU,
     val duoMax: Boolean = false,
+    val bundledManager: BundledManagerState? = null,
+    val preparingManager: Boolean = false,
+    val managerInstallError: String? = null,
 )
 
 internal class ChiroruViewModel(application: Application) : AndroidViewModel(application) {
@@ -54,6 +58,8 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
         firmwareLabel = firmware.profile?.label,
         firmwareSupport = firmware.support,
         adbRootSupported = firmware.profile?.adbRoot != null,
+        bundledManager = if (firmware.profile?.kernelSu?.manager?.source == ManagerSource.BUNDLED)
+            BundledManagerState.CHECKING else null,
     ))
     val state = mutableState.asStateFlow()
     private var intentHandled = false
@@ -97,6 +103,7 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun run(operation: Operation) {
+        if (mutableState.value.preparingManager) return
         if (console.state.value.running) return
         if (mutableState.value.running != null) return
         if (mutableState.value.managerStep?.busy == true) return
@@ -125,6 +132,22 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
         if (mutableState.value.running != null || mutableState.value.managerStep?.busy == true ||
             !Loader.moduleLoaded) return
         viewModelScope.launch { ensureManager() }
+    }
+
+    fun installBundledManager(context: android.content.Context) {
+        if (mutableState.value.preparingManager || mutableState.value.running != null ||
+            Loader.kernelTouched || mutableState.value.runtime.processRoot) return
+        mutableState.update { it.copy(preparingManager = true, managerInstallError = null) }
+        viewModelScope.launch {
+            try {
+                val intent = withContext(Dispatchers.IO) { ManagerPackages.installIntent(context) }
+                context.startActivity(intent)
+            } catch (error: Exception) {
+                mutableState.update { it.copy(managerInstallError = error.message) }
+            } finally {
+                mutableState.update { it.copy(preparingManager = false) }
+            }
+        }
     }
 
     private suspend fun ensureManager() {
@@ -178,10 +201,16 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
             val processConsole = withContext(Dispatchers.IO) {
                 runCatching { NativeBridge.processConsolePresent() }.getOrDefault(false)
             }
+            val bundledManager = if (!Loader.kernelTouched && !runtime.processRoot) withContext(Dispatchers.IO) {
+                firmware.profile?.kernelSu?.manager?.takeIf { it.source == ManagerSource.BUNDLED }?.let {
+                    runCatching { ManagerPackages.state(getApplication(), it) }.getOrDefault(BundledManagerState.UNAVAILABLE)
+                }
+            } else mutableState.value.bundledManager
             Loader.runtime = runtime
             android.util.Log.i(Loader.TAG, "Runtime: processRoot=${runtime.processRoot} KernelSU=${runtime.kernelSu} adbRoot=${runtime.adbRoot}")
             mutableState.update { it.copy(runtime = runtime, consoleRootAvailable = consoleRoot || processConsole,
                 processConsoleAvailable = processConsole,
+                bundledManager = bundledManager,
                 checkingRuntime = false, runtimeChecked = true) }
         }
     }

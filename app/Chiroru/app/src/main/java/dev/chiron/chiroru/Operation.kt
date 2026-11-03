@@ -14,6 +14,7 @@ internal data class ReportResult(val outcome: Outcome, val kernelTouched: Boolea
             val rootReady = Regex("root_stage_done uid=0 euid=0(?:\\s|$)").containsMatchIn(report)
             val moduleLoaded = (operation == Operation.MODULE || operation == Operation.MODULE_SAFE) && rootReady && (
                 Regex("ksud rc=0(?:\\s|$)").containsMatchIn(report) ||
+                    Regex("^module: kernelsu loaded$", RegexOption.MULTILINE).containsMatchIn(report) ||
                     report.contains("module: kernelsu already loaded")
                 )
             val hooksFailed = Regex("^lifecycle: status=failed$", RegexOption.MULTILINE).containsMatchIn(report)

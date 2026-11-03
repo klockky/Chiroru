@@ -124,4 +124,9 @@
     <string name="manager_already_installed">The manager is already installed.</string>
     <string name="manager_error">KernelSU is loaded. Manager installation failed; see the journal for details.</string>
     <string name="manager_retry">Retry manager installation</string>
+    <string name="manager_bundled_required">This firmware needs the bundled armv7 manager before loading KernelSU. Allow installation from Chiroru if Android asks, then tap Install again. After installation, return here and start root.</string>
+    <string name="manager_bundled_install">Install matching manager</string>
+    <string name="manager_bundled_ready">The matching factory armv7 manager is installed.</string>
+    <string name="manager_bundled_conflict">The installed manager does not match this firmware’s certificate or version. Back up any needed manager settings and resolve the conflicting installation before loading KernelSU.</string>
+    <string name="manager_bundled_unavailable">Unable to verify the manager. Reopen Chiroru to check again.</string>
 </resources>

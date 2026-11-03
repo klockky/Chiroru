@@ -29,7 +29,7 @@ internal object FirmwareEnvironment {
 
     fun parseCatalog(text: String): FirmwareCatalog {
         val root = JSONObject(text)
-        require(root.getInt("schemaVersion") == 2) { "Unknown firmware catalog schema" }
+        require(root.getInt("schemaVersion") == 3) { "Unknown firmware catalog schema" }
         val entries = root.getJSONArray("profiles")
         return FirmwareCatalog(List(entries.length()) { index ->
             val profile = entries.getJSONObject(index)
@@ -39,7 +39,12 @@ internal object FirmwareEnvironment {
             }
             val kernelSu = if (!profile.has("kernelSu") || profile.isNull("kernelSu")) null else {
                 val support = profile.getJSONObject("kernelSu")
-                KernelSuSupport(support.getString("backend"), artifact(support, "module"), artifact(support, "ksud"))
+                val manager = support.getJSONObject("manager")
+                val source = ManagerSource.valueOf(manager.getString("source"))
+                KernelSuSupport(support.getString("backend"), artifact(support, "module"), artifact(support, "ksud"),
+                    ManagerSupport(source, manager.getString("packageName"), manager.getString("signerSha256"),
+                        manager.getLong("versionCode"),
+                        if (source == ManagerSource.BUNDLED) artifact(manager, "apk") else null))
             }
             val adbRoot = if (!profile.has("adbRoot") || profile.isNull("adbRoot")) null else {
                 val support = profile.getJSONObject("adbRoot")

@@ -45,6 +45,16 @@ class ManagerReleaseTest {
         }
     }
 
+    @Test fun rejectsFutureReleasesEvenWithTheOfficialRepositoryAndSignaturePolicy() {
+        assertThrows(IllegalStateException::class.java) {
+            ManagerReleases.parse(release(asset()).put("tag_name", "v4.0.0").toString())
+        }
+        assertThrows(IllegalStateException::class.java) {
+            ManagerReleases.parse(release(asset().put("browser_download_url",
+                "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/v4.0.0/manager.apk")).toString())
+        }
+    }
+
     @Test fun rejectsMissingOrMalformedChecksum() {
         for (digest in listOf("", "md5:" + "a".repeat(32), "sha256:bad")) {
             assertThrows(IllegalStateException::class.java) {

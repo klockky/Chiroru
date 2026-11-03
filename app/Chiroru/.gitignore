@@ -6,6 +6,7 @@ local.properties
 **/.cxx/
 *.iml
 *.apk
+!app/src/main/assets/firmware/chiron-1982735225/manager.apk
 *.jks
 *.keystore
 __pycache__/

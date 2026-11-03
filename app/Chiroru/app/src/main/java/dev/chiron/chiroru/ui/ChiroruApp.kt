@@ -54,6 +54,7 @@ internal fun ChiroruApp(state: AppState, model: ChiroruViewModel) {
         restartConsole = { RestartActivity.restart(context) },
         setRootMethod = model::setRootMethod,
         setBootDelay = model::setBootDelay,
+        installBundledManager = { model.installBundledManager(context) },
         initialTab = if ((context as? android.app.Activity)?.intent?.getBooleanExtra("open_console", false) == true) 3 else 0,
     )
 }
@@ -74,6 +75,7 @@ internal fun ChiroruScaffold(
     initialTab: Int = 0,
     setRootMethod: (RootMethod) -> Unit = {},
     setBootDelay: (Int) -> Unit = {},
+    installBundledManager: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     val screenStates = rememberSaveableStateHolder()
@@ -108,7 +110,7 @@ internal fun ChiroruScaffold(
             Box(Modifier.widthIn(max = 800.dp).fillMaxSize()) {
                 screenStates.SaveableStateProvider(tab) {
                     when (tab) {
-                        0 -> HomeScreen(state, run, { tab = 1 }, retryManager)
+                        0 -> HomeScreen(state, run, { tab = 1 }, retryManager, installBundledManager)
                         1 -> JournalScreen(state, clear, refresh)
                         3 -> ConsoleScreen(state, runConsole, stopConsole, clearConsole, restartConsole)
                         else -> SettingsScreen(state, setBoot, setTheme, setRootMethod, setBootDelay)
@@ -135,9 +137,31 @@ private fun Page(title: String, subtitle: String, content: @Composable ColumnSco
 
 @Composable
 private fun HomeScreen(state: AppState, run: (Operation) -> Unit, journal: () -> Unit,
-    retryManager: () -> Unit) {
+    retryManager: () -> Unit, installBundledManager: () -> Unit) {
     Page(stringResource(R.string.app_name), stringResource(R.string.app_subtitle)) {
         StatusCard(state, run, journal)
+        if (state.rootMethod == RootMethod.KERNEL_SU) state.bundledManager?.let { manager ->
+            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.manager_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(when (manager) {
+                        BundledManagerState.READY -> R.string.manager_bundled_ready
+                        BundledManagerState.INCOMPATIBLE -> R.string.manager_bundled_conflict
+                        BundledManagerState.MISSING -> R.string.manager_bundled_required
+                        BundledManagerState.CHECKING -> R.string.manager_checking
+                        BundledManagerState.UNAVAILABLE -> R.string.manager_bundled_unavailable
+                    }))
+                    if (manager == BundledManagerState.MISSING) {
+                        TextButton(onClick = installBundledManager,
+                            enabled = !state.preparingManager && !state.kernelTouched && state.running == null) {
+                            Text(stringResource(R.string.manager_bundled_install))
+                        }
+                    }
+                    if (state.preparingManager) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    state.managerInstallError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
         state.managerStep?.let { ManagerCard(it, retryManager) }
         Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,

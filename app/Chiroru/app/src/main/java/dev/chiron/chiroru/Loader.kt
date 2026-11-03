@@ -44,6 +44,7 @@ internal object Loader {
             val report = FirmwareRunner(
                 FirmwareAssets(storage(context).filesDir) { context.assets.open(it) },
                 BundledFirmwareBackend,
+                { ManagerPackages.readyForLoad(context, it) },
             ).run(selection, operation)
             val result = ReportResult.parse(operation, report)
             kernelTouched = kernelTouched || result.kernelTouched

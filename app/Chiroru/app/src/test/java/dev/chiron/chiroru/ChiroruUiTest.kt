@@ -86,6 +86,24 @@ class ChiroruUiTest {
         assertEquals(listOf(Operation.PROBE), operations)
     }
 
+    @Test fun factoryManagerSetupDoesNotStartRootAndUnlocksOnlyAfterVerification() {
+        val operations = mutableListOf<Operation>()
+        var installs = 0
+        val state = mutableStateOf(AppState(duoMax = true,
+            firmwareSupport = FirmwareSupport.ROOT_AND_KERNEL_SU,
+            bundledManager = BundledManagerState.MISSING))
+        compose.setContent { ChiroruTheme { ChiroruScaffold(state.value, run = operations::add,
+            installBundledManager = { installs++ }) } }
+        compose.onNodeWithText("Acquire root").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Install matching manager").performScrollTo().performClick()
+        assertEquals(1, installs)
+        assertEquals(emptyList<Operation>(), operations)
+        compose.runOnIdle { state.value = state.value.copy(bundledManager = BundledManagerState.READY) }
+        compose.onNodeWithText("Install matching manager").assertDoesNotExist()
+        compose.onNodeWithText("Acquire root").performScrollTo().performClick()
+        assertEquals(listOf(Operation.MODULE), operations)
+    }
+
     @Test fun otherDeviceCannotLaunchEvenWithSupportedFirmwareState() {
         compose.setContent { ChiroruTheme { ChiroruScaffold(AppState(duoMax = false,
             firmwareSupport = FirmwareSupport.ROOT_AND_KERNEL_SU)) } }

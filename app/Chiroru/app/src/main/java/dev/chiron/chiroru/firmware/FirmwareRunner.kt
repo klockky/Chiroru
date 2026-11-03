@@ -20,6 +20,7 @@ internal object BundledFirmwareBackend : FirmwareBackend {
 internal class FirmwareRunner(
     private val assets: FirmwareAssets,
     private val backend: FirmwareBackend,
+    private val managerReady: (ManagerSupport) -> Boolean = { it.source == ManagerSource.OFFICIAL_RELEASE },
 ) {
     fun run(selection: FirmwareSelection, operation: Operation): String {
         val header = selection.report() + "\n"
@@ -33,6 +34,13 @@ internal class FirmwareRunner(
             profile.kernelSu?.backend ?: return header + "preflight: blocked (KernelSU is not supported; root-only profile)\n"
         } else profile.root.backend
         val payloads = try {
+            if (needsModule) {
+                check(managerReady(profile.kernelSu!!.manager)) {
+                    if (profile.kernelSu.manager.source == ManagerSource.BUNDLED)
+                        "Install the matching bundled KernelSU manager from Chiroru before loading"
+                    else "Installed KernelSU manager does not match this firmware's certificate/version"
+                }
+            }
             check(backend.supports(backendId)) { "Native backend missing: $backendId" }
             when {
                 operation == Operation.ADB_ROOT -> assets.prepareAdb(profile)

@@ -13,6 +13,13 @@ internal class FirmwareAssets(
     private val filesDir: File,
     private val openAsset: (String) -> InputStream,
 ) {
+    fun prepareManager(profile: FirmwareProfile): String {
+        val artifact = checkNotNull(profile.kernelSu?.manager?.apk) { "No bundled manager for this profile" }
+        val directory = File(filesDir, "firmware/${profile.id}")
+        check(directory.isDirectory || directory.mkdirs()) { "Cannot create firmware directory" }
+        return install(directory, "manager.apk", artifact, executable = false).absolutePath
+    }
+
     fun prepare(profile: FirmwareProfile): Pair<String, String> {
         val support = checkNotNull(profile.kernelSu) { "KernelSU is not supported by this firmware profile" }
         val directory = File(filesDir, "firmware/${profile.id}")
