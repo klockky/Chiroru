@@ -5,3 +5,5 @@ CHIRORU_BACKEND("chiron-1982735225", chiron_1982735225_probe, chiron_1982735225_
 CHIRORU_BACKEND("chiron-1982735225-adb", chiron_1982735225_probe, chiron_1982735225_adb_root)
 CHIRORU_BACKEND("chiron-5000001245", mali_jm_probe, chiron_5000001245_root)
 CHIRORU_BACKEND("chiron-5000001245-adb", mali_jm_probe, chiron_5000001245_adb_root)
+CHIRORU_BACKEND("chiron-5000001248", mali_jm_probe, chiron_5000001248_root)
+CHIRORU_BACKEND("chiron-5000001248-adb", mali_jm_probe, chiron_5000001248_adb_root)

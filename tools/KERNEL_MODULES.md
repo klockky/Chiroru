@@ -1,7 +1,7 @@
 # Сборка kernel-модулей Chiroru
 
 `build-kernel-modules.py` собирает `chiroru_adb.ko` и `kernelsu.ko` для каждого
-из трёх точных профилей. Исходники модулей находятся в `adb-root/module/` и
+из четырёх точных профилей (включая OTA-кандидат `5000001248`). Исходники модулей находятся в `adb-root/module/` и
 `build-txn/`; factory-изменения KernelSU — в `tools/factory/kernel.patch`.
 Все kernel-модули — **AArch64**, включая factory с 32-битным userspace.
 
@@ -64,9 +64,10 @@ CRC **`0x8395960f`**, проверенный по штатным модулям 
 python3 tools/build-kernel-modules.py 5000001307 /path/to/prepared-kernel /tmp/opencode/modules-1307
 python3 tools/build-kernel-modules.py 5000001245 /path/to/prepared-kernel /tmp/opencode/modules-1245
 python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/opencode/modules-factory
+python3 tools/build-kernel-modules.py 5000001248 /path/to/prepared-kernel /tmp/opencode/modules-1248
 ```
 
-Можно использовать одно проверенное подготовленное дерево для всех трёх команд.
+Можно использовать одно проверенное подготовленное дерево для всех четырёх команд.
 Скрипт копирует его в `OUTPUT/work/headers`, устанавливает release выбранного
 профиля в этой копии и собирает из чистой копии отслеживаемых исходников.
 Изменения существующих файлов working tree учитываются; новые исходники должны
@@ -77,6 +78,7 @@ python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/o
 | `5000001307` | `5.4.125-android11-2-g601513d4b115-ab5000001307` | `v3.4.0-legacy`, version 34000 |
 | `5000001245` | `5.4.125-android11-2-g601513d4b115-ab5000001245` | `v3.4.0-legacy`, version 34000 |
 | `1982735225` | `5.4.125-android11-2-g85fe5498964f-ab1982735225` | factory patch, `v3.4.2-factory`, version 34000 |
+| `5000001248` | `5.4.125-android11-2-g601513d4b115-ab5000001248` | OTA candidate, `v3.4.0-legacy`, version 34000 |
 
 ADB release guard задаётся через `CHIRORU_KERNEL_RELEASE` при компиляции.
 Замена строк в готовом ELF больше не нужна. Для factory включаются compat hooks
@@ -139,8 +141,10 @@ CHIRORU_MODULE_WORK=/tmp/opencode/modules-1245/work \
 `test_native_firmware_profiles.py`, APK-проверки и аппаратные проверки
 соответствующего профиля. Сборка сама не обновляет каталог ресурсов.
 
-Скрипт проверен реальной сборкой всех шести модулей. У каждой пары `.text`
-совпала с упакованным модулем 0.7.2; различия runtime sections ограничены
-build ID и диагностическими строками путей. CI запускает проверки выбора
+Скрипт проверен реальной сборкой модулей всех четырёх профилей. Для первых
+трёх пар `.text` совпала с упакованными модулями 0.7.2; различия runtime sections
+ограничены build ID и диагностическими строками путей. Новый профиль `1248`
+проверен статически по OTA и запуском KernelSU на устройстве в rc2;
+аппаратная проверка ADB root ожидается. CI запускает проверки выбора
 профиля и ELF на упакованных модулях; полная cross-сборка требует внешнего
 подготовленного дерева.

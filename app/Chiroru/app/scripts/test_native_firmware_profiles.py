@@ -10,7 +10,89 @@ SOURCE = (APP / "src/main/cpp/backends/chiron_5000001307/root.c").read_text()
 
 
 class NativeFirmwareProfilesTest(unittest.TestCase):
-    def test_exact_gates_and_adb_data_symbols_for_both_firmwares(self):
+    def test_base_reads_do_not_reuse_cached_window_translations(self):
+        profiles = SOURCE[SOURCE.index("struct chiroru_vendor_sym"):SOURCE.index("#define WALK_SUB")]
+        start = SOURCE.index("    volatile uint8_t *slot0 =")
+        setup = SOURCE[start:SOURCE.index("      for (n = 0;", start)]
+        program = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#define rp(...) ((void)0)
+#define BLOCK_BYTES 4096
+''' + profiles + r'''
+static uint8_t pages[8][4096], *tlb[512];
+static uint64_t physical[8];
+static int page_count;
+static uint8_t *page(uint64_t pa) {
+    pa &= ~0xfffULL;
+    for (int i = 0; i < page_count; ++i)
+        if (physical[i] == pa) return pages[i];
+    assert(page_count < 8);
+    physical[page_count] = pa;
+    return pages[page_count++];
+}
+static void put(uint64_t pa, uint64_t value) {
+    memcpy(page(pa) + (pa & 0xfff), &value, 8);
+}
+static volatile uint8_t *win_open(volatile uint64_t *table, int idx,
+        uint64_t live, uint64_t pa, volatile uint8_t *base) {
+    assert(idx >= 3 && idx < 512);
+    /* Model a cached translation surviving a PTE clear. */
+    if (!tlb[idx]) tlb[idx] = page(pa);
+    return tlb[idx];
+}
+static void win_close(volatile uint64_t *table, int idx) { }
+static int run(const struct chiroru_profile *prof) {
+    memset(pages, 0, sizeof pages); memset(tlb, 0, sizeof tlb); page_count = 0;
+    uint64_t expected_base = 0xffffff8040000000ULL;
+    uint64_t expected_task = expected_base + 0x1234418ULL;
+    uint64_t init_page_pa = prof->init_task_pa & ~0xfffULL;
+    uint64_t init_lbase_raw = (prof->init_task_pa & 0xfffULL) + 0x418;
+    uint64_t init_walk_raw = (prof->init_task_pa & 0xfffULL) + 0x420;
+    put(init_page_pa + init_lbase_raw, expected_base + prof->lbase_magic);
+    put(init_page_pa + init_walk_raw, expected_task);
+    if (prof->image_size) {
+        put(prof->image_pa + 8, 0x80000);
+        put(prof->image_pa + 16, prof->image_size);
+        put(prof->image_pa + 56, 0x644d5241);
+    }
+    if (!prof->use_magic_lbase) {
+        put(prof->memstart_addr_pa, 0ULL - 0x40000000ULL);
+        put(prof->vabits_actual_pa, 39);
+        put(prof->kimage_voffset_pa, 0xffffffee0f000000ULL);
+    }
+    uint64_t lbase = 0, stext_va = 0, table0 = 0, table[512] = {0};
+    uint8_t spray_base[4096]; int found_block = 0;
+''' + setup + r'''
+        if (lbase != expected_base || va != expected_task) return 2;
+        if (!prof->use_magic_lbase &&
+            stext_va != 0xffffffee0f000000ULL + prof->image_pa + 0x800) return 3;
+    }
+    return 0;
+out:
+    return 4;
+}
+int main(void) {
+    const struct chiroru_profile *all[] = { &profile_5000001307,
+        &profile_1982735225, &profile_5000001245, &profile_5000001248 };
+    for (int i = 0; i < 4; ++i) { int rc = run(all[i]); if (rc) return rc; }
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            source, binary = Path(directory) / "windows.c", Path(directory) / "windows"
+            for reuse_header_slot in (False, True):
+                text = program
+                if reuse_header_slot:
+                    # Reintroduce rc1's header/memstart slot collision.
+                    text = text.replace("int slot = next_slot++;", "int slot = 3;", 1)
+                source.write_text(text)
+                subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
+                result = subprocess.run([str(binary)], timeout=10)
+                self.assertEqual(result.returncode, 2 if reuse_header_slot else 0)
+
+    def test_exact_gates_and_adb_data_symbols_for_all_firmwares(self):
         profiles = SOURCE[SOURCE.index("struct chiroru_vendor_sym"):SOURCE.index("#define WALK_SUB")]
         patcher = SOURCE[SOURCE.index("static int patch_vendor_syms("):SOURCE.index("static int patch_module_symbols(")]
         gate = SOURCE[SOURCE.index("static int profile_gate(const struct chiroru_profile *prof, struct rpt *r) {"):
@@ -51,16 +133,16 @@ static long fake_sysconf(int key) { (void)key; return page_size; }
 #define sysconf fake_sysconf
 ''' + profiles + patcher + gate + r'''
 int main(int argc, char **argv) {
-    assert(argc == 4);
+    assert(argc == 5);
     struct rpt report;
-    const struct chiroru_profile *all[] = { &profile_5000001307, &profile_1982735225, &profile_5000001245 };
-    for (int i = 0; i < 3; ++i) {
+    const struct chiroru_profile *all[] = { &profile_5000001307, &profile_1982735225, &profile_5000001245, &profile_5000001248 };
+    for (int i = 0; i < 4; ++i) {
         const struct chiroru_profile *prof = all[i];
         fp = prof->fingerprint; inc = prof->incremental;
         release = prof->kernel_release; machine = prof->machine;
         sdk = "30"; page_size = 4096; bad_uname = 0;
         assert(profile_gate(prof, &report) == 0);
-        for (int j = 0; j < 3; ++j) if (j != i) assert(profile_gate(all[j], &report) != 0);
+        for (int j = 0; j < 4; ++j) if (j != i) assert(profile_gate(all[j], &report) != 0);
         const char **fields[] = { &fp, &inc, &release, &machine, &sdk };
         for (int j = 0; j < 5; ++j) {
             const char *saved = *fields[j]; *fields[j] = "different";
@@ -84,7 +166,7 @@ int main(int argc, char **argv) {
             source.write_text(program)
             subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
             subprocess.run([str(binary), *(str(APP / f"src/main/assets/firmware/chiron-{build}/chiroru_adb.ko")
-                                          for build in ("5000001307", "1982735225", "5000001245"))], check=True, timeout=10)
+                                          for build in ("5000001307", "1982735225", "5000001245", "5000001248"))], check=True, timeout=10)
 
 
 if __name__ == "__main__":

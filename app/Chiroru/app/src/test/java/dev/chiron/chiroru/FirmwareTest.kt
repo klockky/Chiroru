@@ -78,7 +78,7 @@ class FirmwareTest {
         assertEquals("client", File(temporary.root, "firmware/${p.id}/chiroru_adb.ko.client").readText())
     }
 
-    @Test fun bothShippedProfilesRouteEveryOperationToTheirOwnVerifiedPayloads() {
+    @Test fun allShippedProfilesRouteEveryOperationToTheirOwnVerifiedPayloads() {
         val catalog = FirmwareEnvironment.parseCatalog(catalogText)
         val context = RuntimeEnvironment.getApplication()
         for (p in catalog.profiles) {
@@ -123,6 +123,20 @@ class FirmwareTest {
         assertNotEquals(previous.adbRoot!!.module.sha256, build.adbRoot!!.module.sha256)
         assertEquals(previous.adbRoot!!.client.asset, build.adbRoot!!.client.asset)
         assertEquals(FirmwareSupport.ROOT_AND_KERNEL_SU, catalog.select(build.identity).support)
+    }
+
+    @Test fun otaCandidateRejectsMixedAndNeighbouringFirmwareIdentities() {
+        val catalog = FirmwareEnvironment.parseCatalog(catalogText)
+        val candidate = catalog.profiles.single { it.id == "chiron-5000001248" }
+        val previous = catalog.profiles.single { it.id == "chiron-5000001245" }
+        assertEquals(candidate, catalog.select(candidate.identity).profile)
+        assertTrue(candidate.label.contains("OTA test"))
+        assertNull(catalog.select(candidate.identity.copy(kernelRelease = previous.identity.kernelRelease)).profile)
+        assertNull(catalog.select(candidate.identity.copy(fingerprint = previous.identity.fingerprint)).profile)
+        assertNull(catalog.select(candidate.identity.copy(incremental = "5000001249")).profile)
+        assertNotEquals(previous.adbRoot!!.module.sha256, candidate.adbRoot!!.module.sha256)
+        assertNotEquals(previous.kernelSu!!.module.sha256, candidate.kernelSu!!.module.sha256)
+        assertEquals(previous.kernelSu!!.manager, candidate.kernelSu!!.manager)
     }
 
     @Test fun factoryManagerIsRequiredBeforeAnyNativeCallOrPayloadRead() {

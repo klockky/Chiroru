@@ -35,7 +35,9 @@ Chiroru/
 `assets/firmware/chiron-5000001245/` содержит ту же транзакционную сборку,
 пересобранную под vermagic `…ab5000001245`, и `chiroru_adb.ko` для этого
 ядра; task layout совпадает с `5000001307`, а `sys_call_table` имеет отдельное
-смещение (см. [FIRMWARE.md](FIRMWARE.md)). Сборка обоих модулей для всех трёх
+смещение (см. [FIRMWARE.md](FIRMWARE.md)). Для OTA-кандидата `5000001248`
+также включены отдельные пересобранные модули и свой syscall-table offset.
+Сборка обоих модулей для всех четырёх
 профилей описана в [KERNEL_MODULES.md](../../tools/KERNEL_MODULES.md):
 `tools/build-kernel-modules.py` выбирает release guard при компиляции,
 применяет factory patch и проверяет готовый ELF.
@@ -74,7 +76,7 @@ Gradle Wrapper скопирован из существующего Gradle-пр�
 
 `ManagerReleases`, `ManagerProvisioning` и `ManagerInstaller` проверяют наличие KSU Next
 Manager, выбирают и проверяют официальный GitHub release v3.4.2 для `5000001307`
-и `5000001245`, устанавливают отсутствующий пакет после загрузки KernelSU. `ManagerPackages`
+и профилей `5000001245`/`5000001248`, устанавливают отсутствующий пакет после загрузки KernelSU. `ManagerPackages`
 проверяет profile-specific подпись; встроенный factory APK устанавливается
 системным установщиком до root через ограниченный FileProvider. `AppIo` сохраняет открытые дескрипторы для скачивания
 и boot-отчёта до смены credentials. Нативные исходники этой функцией не меняются.
