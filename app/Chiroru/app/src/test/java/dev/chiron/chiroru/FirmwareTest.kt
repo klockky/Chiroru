@@ -111,6 +111,20 @@ class FirmwareTest {
         }
     }
 
+    @Test fun newBuildIsDistinctAndUsesItsOwnKernelPayloads() {
+        val catalog = FirmwareEnvironment.parseCatalog(catalogText)
+        val build = catalog.profiles.single { it.id == "chiron-5000001245" }
+        val previous = catalog.profiles.single { it.id == "chiron-5000001307" }
+        assertEquals("5000001245", build.identity.incremental)
+        assertEquals("5.4.125-android11-2-g601513d4b115-ab5000001245", build.identity.kernelRelease)
+        assertEquals("aarch64", build.identity.machine)
+        assertEquals(ManagerSource.OFFICIAL_RELEASE, build.kernelSu!!.manager.source)
+        assertNotEquals(previous.kernelSu!!.module.sha256, build.kernelSu!!.module.sha256)
+        assertNotEquals(previous.adbRoot!!.module.sha256, build.adbRoot!!.module.sha256)
+        assertEquals(previous.adbRoot!!.client.asset, build.adbRoot!!.client.asset)
+        assertEquals(FirmwareSupport.ROOT_AND_KERNEL_SU, catalog.select(build.identity).support)
+    }
+
     @Test fun factoryManagerIsRequiredBeforeAnyNativeCallOrPayloadRead() {
         val factory = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-1982735225" }
         val backend = FakeBackend()

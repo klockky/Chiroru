@@ -38,7 +38,8 @@ def verify(apk):
     with zipfile.ZipFile(apk) as archive:
         if archive.read("assets/firmware/profiles.json") != catalog_bytes:
             raise ValueError("APK catalog differs from source")
-        if {p["id"] for p in catalog["profiles"]} != {"chiron-1982735225", "chiron-5000001307"}:
+        if {p["id"] for p in catalog["profiles"]} != {
+                "chiron-1982735225", "chiron-5000001307", "chiron-5000001245"}:
             raise ValueError("Release must contain both verified firmware profiles")
         for abi, cls, machine in (("arm64-v8a", 2, 183), ("armeabi-v7a", 1, 40)):
             for library in ("libchiroru.so", "libchiroru_console.so", "libchiroru_root_console.so"):
