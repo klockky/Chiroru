@@ -1,74 +1,41 @@
-# Factory 1982735225 ADB module
+# Factory ADB module
 
-The factory build has a 32-bit-only userspace and no `linker64`, so the bundled
-aarch64 `ksud` cannot run. The factory ADB path therefore:
+Firmware `1982735225` uses an ARM64 kernel with 32-bit userspace and no `linker64`.
+The factory loader resolves ELF64 symbols and calls `init_module()` directly
+from the 32-bit app. Its `chiroru-su` client is a static ARMv7 executable.
 
-- patches the module's data symbols (`selinux_state`, `selinux_blob_sizes`) from
-  the live `_stext`;
-- resolves the remaining undefined text symbols from `/proc/kallsyms`;
-- calls `init_module()` directly from the native loader;
-- installs a **static 32-bit** `chiroru-su` client.
+## ABI and symbols
 
-## Artifacts
-
-| file | SHA-256 |
-|---|---|
-| `chiroru_adb.ko` | `f41bb8bd85f35895c7ec8bc9a7bc4be5d5bbe8e778ceb42023e8df0b2db517f7` |
-| `chiroru-su` | `fbde93588765d2970056cb381ef28b61e6c12f013ef41e8c0308b00b458a1e85` |
-
-`chiroru_adb.ko` has:
-
-```
+```text
 vermagic=5.4.125-android11-2-g85fe5498964f-ab1982735225 SMP preempt mod_unload modversions aarch64
-__versions: module_layout = 0x8395960f
-selinux_state, selinux_blob_sizes: UND (patched at runtime)
-```
-
-The factory kernel's `factory-mali.ko` carries the same `module_layout` value.
-
-## Build
-
-The module is a cross-build against the prepared 5.4.125 headers used for the
-verified modules. See [kernel module builds](../tools/KERNEL_MODULES.md) for
-the external inputs, checks and all three firmware profiles. From the root:
-
-```sh
-python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel \
-    /tmp/opencode/factory-adb --module adb
-```
-
-The builder selects the exact release guard at compile time through
-`CHIRORU_KERNEL_RELEASE`, then verifies it in the output ELF along with
-vermagic and `module_layout`. No post-build string replacement is required.
-
-To build both the module and its static ARMv7 client with NDK r28c:
-
-```sh
-ANDROID_NDK_HOME=/path/to/android-ndk \
-    bash adb-root/build.sh 1982735225 /path/to/prepared-kernel /tmp/opencode/factory-adb-client
-```
-
-## Runtime addresses
-
-`selinux_state` and `selinux_blob_sizes` are not exported and are not in the
-text-only kallsyms. The factory backend patches them to:
-
-```
+module_layout CRC = 0x8395960f
 selinux_state      = _stext + 0x147CB10
 selinux_blob_sizes = _stext + 0xFE253C
 ```
 
-`_stext` comes from `/proc/kallsyms` after the credential stage; the addresses
-are not hard-coded to a boot.
+The two data symbols are patched from the live `_stext`; other undefined symbols
+are resolved through `/proc/kallsyms`. The CRC matches the factory `mali.ko`.
+Asset paths and hashes are in
+[`profiles.json`](../app/Chiroru/app/src/main/assets/firmware/profiles.json).
 
-## Verification
+## Build
 
-Cold-boot test on `Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1982735225`:
+The module uses prepared Linux 5.4.125 headers. Requirements and ABI checks:
+[KERNEL_MODULES.md](../tools/KERNEL_MODULES.md).
 
+From the repository root:
+
+```sh
+python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel \
+  /tmp/opencode/factory-adb --module adb
 ```
-/data/local/tmp/chiroru-su --status   -> Chiroru ADB root: available (API 1)
-/data/local/tmp/chiroru-su -c 'id'    -> uid=0(root) ... context=u:r:chiroru_adb:s0
-getenforce                            -> Enforcing
+
+To build the module and static ARMv7 client:
+
+```sh
+ANDROID_NDK_HOME=/path/to/android-ndk \
+  bash adb-root/build.sh 1982735225 /path/to/prepared-kernel /tmp/opencode/factory-adb-client
 ```
 
-The module is not persistent; after a reboot ADB root must be enabled again.
+The builder sets `CHIRORU_KERNEL_RELEASE` at compile time and verifies the
+release guard, vermagic and CRC in the resulting ELF.

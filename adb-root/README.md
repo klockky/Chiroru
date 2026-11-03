@@ -1,69 +1,69 @@
-# Chiroru ADB root — точные профили chiron
+# ADB root
 
-Независимый от загруженного KernelSU режим для консоли с компьютера и из приложения.
-В Chiroru 0.6.0 выберите **«Включить root для ADB»**, затем откройте вкладку
-**«Консоль»** и включите **Root**, либо выполните с компьютера:
+Модуль `chiroru_adb` выдаёт root консоли ADB и отдельному исполнителю команд
+Chiroru. KernelSU для этого режима не нужен.
+
+## Использование
+
+В настройках Chiroru выберите **ADB root shell** и нажмите **«Получить root»**.
+С компьютера:
 
 ```sh
 adb shell -t /data/local/tmp/chiroru-su
-```
-
-Одна команда или проверка доступности:
-
-```sh
 adb shell /data/local/tmp/chiroru-su -c 'id; getenforce'
 adb shell /data/local/tmp/chiroru-su --status
 ```
 
-Ожидаемые права: UID/GID 0, `u:r:chiroru_adb:s0`. Обычный `adb shell` остаётся
-UID 2000. `exit` завершает root-консоль. Модуль работает после закрытия Chiroru,
-до перезагрузки; после перезагрузки его нужно снова включить кнопкой. Автозагрузки
-для этого режима нет. `adb root` и системный `su` не устанавливаются.
+Root-shell получает UID/GID 0 и контекст `u:r:chiroru_adb:s0`.
+Обычный `adb shell` остаётся UID 2000. `exit` закрывает root-shell.
+Модуль работает до перезагрузки станции, в том числе после закрытия Chiroru.
+Автозагрузки этого режима нет; `adb root` и системный `su` не устанавливаются.
 
-## Реализация
+Для команд на станции откройте вкладку **«Консоль»** и включите **Root**.
+После первоначальной загрузки модуля приложение предложит перезапустить Chiroru.
 
-- `chiroru_adb.ko` — устройство `/dev/chiroru_adb`.
-- `chiroru-su` — 8 040 байт; явный ioctl и `exec /system/bin/sh -p`.
-- GET_INFO не меняет права и доступен для проверки из обычного Chiroru.
-- ADB GRANT проверяет реальный/effective UID **2000**, исходный SELinux SID `shell`
-  и initial user namespace как у текущей задачи, так и у открывшего дескриптор.
-  Требуется RW-дескриптор и однопоточный вызывающий процесс. Передача дескриптора
-  обычному приложению не выдаёт ему root.
-- В 0.6.0 добавлены отдельные CONSOLE_INFO/CONSOLE_GRANT (0x4372/0x4373).
-  Загрузчик до изменения credentials запоминает фактические UID и полный
-  SELinux-контекст Chiroru, включая MCS-категории. Они передаются в read-only
-  параметры модуля `console_uid`/`console_context`. Модуль сравнивает **оба**
-  credentials (opener/current) с этой идентичностью и initial user namespace;
-  CONSOLE_GRANT дополнительно требует однопоточный процесс. Он доступен через
-  read-only FD: права узла root:shell 0664 и политика SELinux не расширены.
-  CONSOLE_INFO только проверяет доступность и не выдаёт права. Без enrollment
-  сохраняется режим только ADB. Enrollment действует в пределах текущей загрузки;
-  это привязка к UID/SID, а не проверка подписи APK внутри ядра.
-- Команды приложения запускает отдельный executable `libchiroru_console.so`
-  из nativeLibraryDir. Root запрашивает этот однопоточный дочерний процесс,
-  не ART/UI-процесс. Он сохраняет наследуемый Android seccomp-фильтр; команды,
-  которым нужны запрещённые этим фильтром syscalls, могут завершаться ошибкой.
-  Сам модуль ADB и клиент `chiroru-su` остаются совместимыми с API 1.
-- Новые credentials создаются через native `prepare_creds`/`commit_creds`;
-  supplementary groups очищаются, выставляются UID/GID 0 и capabilities.
-- Отдельный SELinux-домен `chiroru_adb` **enforcing**, с разрешениями root.
-  Политика публикуется штатным `security_load_policy()` в проверенной транзакции.
-  Типы и правила живут в памяти до перезагрузки. Глобальный Enforcing не отключается
-  модулем или консольным клиентом.
-- Для bootstrap из приложения используется существующее краткое permissive-окно
-  native-загрузчика Chiroru. `kptr_restrict` временно устанавливается в 0 для
-  relocation, затем возвращается к исходному значению (на станции — 2).
-  Успех операции публикуется после восстановления SELinux Enforcing.
-- Пользовательский `ksud insmod` используется только как ELF-релокатор/загрузчик
-  `.ko`; `kernelsu.ko`, KernelSU Manager, SU API и lifecycle не используются.
-  Три файла SELinux-библиотеки переиспользуются из проверенного `build-txn`,
-  но KernelSU hooks/runtime в модуль не линкуются.
-- Root «только для процесса», KernelSU и ADB root — три независимых операции.
+## Доступ к модулю
+
+Устройство модуля — `/dev/chiroru_adb`, права `root:shell 0664`.
+
+| Запрос | Назначение |
+|---|---|
+| `GET_INFO` | Проверить наличие модуля без изменения прав |
+| `ADB_GRANT` | Выдать root однопоточному shell-процессу с UID/EUID 2000 |
+| `CONSOLE_INFO` (`0x4372`) | Проверить доступ исполнителя Chiroru |
+| `CONSOLE_GRANT` (`0x4373`) | Выдать root исполнителю Chiroru |
+
+`ADB_GRANT` требует RW-дескриптор, SELinux SID `shell` и initial user namespace.
+Проверяются credentials текущего процесса и процесса, открывшего дескриптор.
+
+Для встроенной консоли загрузчик передаёт исходные UID и полный SELinux-контекст
+приложения, включая MCS, в параметры `console_uid` и `console_context`.
+Модуль сравнивает их с обоими наборами credentials. Эта привязка действует до
+перезагрузки и не является проверкой подписи APK в ядре.
+
+Root получает однопоточный `libchiroru_console.so` из `nativeLibraryDir`.
+Он наследует Android seccomp-фильтр: запрещённые им системные вызовы остаются
+недоступны. `chiroru-su` использует ioctl и запускает `/system/bin/sh -p`.
+
+## Загрузка и SELinux
+
+Модуль создаёт credentials через `prepare_creds`/`commit_creds`, очищает
+supplementary groups и устанавливает UID/GID 0 и capabilities.
+Домен `chiroru_adb` работает в Enforcing. Политика загружается через
+`security_load_policy()` и хранится в памяти до перезагрузки.
+
+Начальный загрузчик Chiroru использует краткое permissive-окно и временно
+снимает `kptr_restrict` для разрешения символов. Успех возвращается после
+восстановления исходного `kptr_restrict` и SELinux Enforcing.
+Сам модуль и клиент Enforcing не отключают.
+
+На arm64 `ksud insmod` используется как загрузчик ELF. Factory разрешает
+символы и вызывает `init_module()` из 32-битного приложения:
+[FACTORY-MODULE.md](FACTORY-MODULE.md).
 
 ## Сборка и проверки
 
-Из корня `Chiroru` (подготовленные заголовки и все профили описаны в
-[инструкции сборки модулей](../tools/KERNEL_MODULES.md)):
+Из корня репозитория:
 
 ```sh
 bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/adb-1245
@@ -74,20 +74,13 @@ adb pull /odm/etc/selinux/precompiled_sepolicy /tmp/opencode/chiron-stock-policy
 /tmp/opencode/adb-policy-host/test-policy /tmp/opencode/chiron-stock-policy.bin
 ```
 
-Нужны внешнее подготовленное дерево ядра, GCC ARM64 и NDK 28.2.13676358. ABI-проверки используют
-сохранённый vendor ELF, закреплённый SHA-256. Исходники библиотеки и адаптеры
-проверяются `gen_policy_writer.py --check`, конфигурация preemption — отдельным
-проверяющим скриптом. Готовые файлы находятся в заданном каталоге результата;
-для APK модуль копируют в `app/Chiroru/app/src/main/assets/firmware/chiron-BUILD/`,
-клиент — по пути соответствующего профиля, затем обновляют SHA-256 блока
-`adbRoot` в каталоге. Валидатор APK сверяет все три ресурса.
+Нужны подготовленное дерево ядра, GCC ARM64 и NDK `28.2.13676358`.
+Входные файлы и проверка ABI описаны в [KERNEL_MODULES.md](../tools/KERNEL_MODULES.md).
+Для включения результата в APK обновите ресурсы и хеши блока `adbRoot`.
 
-`test_client.c` — отдельный on-device тест, запускаемый именно от обычного shell
-после активации модуля. Он проверяет read-only ioctl, неизвестные команды,
-неправильный аргумент, отказ по UID/SELinux-домену и передачу FD приложению.
-`test_console_auth.c` запускается через root CLI и проверяет точный UID/SID,
-чужие UID, домен и MCS, чужого opener и отказ многопоточному вызывающему.
+`test_client.c` запускается на устройстве от обычного shell и проверяет ioctl,
+отказы по UID/SID и передачу дескриптора приложению. `test_console_auth.c`
+запускается через root CLI и проверяет UID, MCS, владельца дескриптора и отказ
+многопоточному процессу.
 
-Ограниченная проверка устройства и известный исправленный сбой:
-[отчёт](../reports/chiroru-adb-root-device-2026-11-01.md).
-Код модуля/клиента и переиспользованной SELinux-библиотеки — GPL-2.0-only.
+Код модуля, клиента и SELinux-библиотеки — GPL-2.0-only.

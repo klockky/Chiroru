@@ -1,127 +1,109 @@
-# Сборка kernel-модулей Chiroru
+# Сборка модулей ядра
 
-`build-kernel-modules.py` собирает `chiroru_adb.ko` и `kernelsu.ko` для каждого
-из четырёх точных профилей (включая OTA-кандидат `5000001248`). Исходники модулей находятся в `adb-root/module/` и
-`build-txn/`; factory-изменения KernelSU — в `tools/factory/kernel.patch`.
-Все kernel-модули — **AArch64**, включая factory с 32-битным userspace.
+`build-kernel-modules.py` собирает `chiroru_adb.ko` из `adb-root/module/`
+и `kernelsu.ko` из `build-txn/`. Для factory применяется `tools/factory/kernel.patch`.
+Все модули — AArch64, включая factory с 32-битным userspace.
 
 ## Зависимости
 
 - Linux, Python 3.10+, Git, GNU Make, `patch`.
-- AArch64 GCC и binutils: `aarch64-linux-gnu-gcc`, `objcopy`, `nm`, `objdump`.
-  Проверенная локальная сборка использует GCC **16.2.0**, GNU Make **4.4.1**.
-- Полный Linux 5.4.125 source tree и **подготовленное vendor-совместимое
-  дерево сборки**. В публичном `linux-txn/` находится только SELinux-подмножество
-  для userspace policy builder, а не полное дерево для сборки `.ko`.
-- Для отдельного ADB-клиента: Android NDK **28.2.13676358**, API 30.
+- AArch64 GCC и binutils.
+- Полные исходники Linux 5.4.125 и подготовленное vendor-совместимое дерево сборки.
+- Для клиента `chiroru-su` — Android NDK `28.2.13676358`, API 30.
 
-Точный vendor source commit не восстановлен: исходное подготовленное дерево
-было без Git metadata. Поэтому здесь документирована сборка с этим внешним
-входом, а не получение идентичного ядра из произвольного upstream checkout.
-Один `make modules_prepare` не восстанавливает vendor ABI и `Module.symvers`.
+`linux-txn/` содержит только SELinux-исходники для userspace. Полного дерева
+ядра в репозитории нет. Исходное внешнее дерево не содержало Git metadata,
+поэтому его точный vendor-коммит неизвестен. `make modules_prepare` на
+произвольном upstream-ядре не воспроизводит нужный ABI и `Module.symvers`.
 
-### Подготовленное дерево
+## Подготовленное дерево
 
-Передайте каталог kernel **output**, содержащий:
+Сборщику нужен каталог kernel output:
 
 ```text
-Makefile                         # Kbuild wrapper для полного source tree
-source -> /path/to/kernel-source  # рабочая ссылка на полные исходники
+Makefile                         # Kbuild wrapper
+source -> /path/to/kernel-source
 .config
 Module.symvers
 include/config/{auto.conf,kernel.release}
 include/generated/{autoconf.h,utsrelease.h,...}
 arch/arm64/include/...
-scripts/...                      # подготовленные Kbuild host tools
+scripts/...
 security/selinux/flask.h
 ```
 
-После переноса дерева восстановите `source` и путь к исходному Makefile в
-Kbuild wrapper. Пути сборки должны быть без пробелов. Дерево должно быть уже
-подготовлено под ARM64, 4 KiB pages, modules, modversions и preemption;
-`auto.conf` и `autoconf.h` должны согласовываться. Для `module_layout` требуется
-CRC **`0x8395960f`**, проверенный по штатным модулям всех трёх прошивок.
-В использованном дереве `Module.symvers` содержит эту единственную запись;
-остальные undefined symbols разрешает загрузчик Chiroru. Поэтому ожидаются
-предупреждения modpost об undefined symbols (`KBUILD_MODPOST_WARN=1`).
+После переноса проверьте ссылку `source` и путь в Makefile. Пути не должны
+содержать пробелы. Требуются ARM64, страницы 4 KiB, modules, modversions
+и preemption; `auto.conf` и `autoconf.h` должны соответствовать `.config`.
 
-Контрольные суммы конфигурации дерева, использованного для проверки скрипта:
+CRC `module_layout` — `0x8395960f`. В используемом `Module.symvers`
+это единственная запись. Остальные
+символы разрешает загрузчик Chiroru, поэтому предупреждения modpost об undefined
+symbols ожидаемы (`KBUILD_MODPOST_WARN=1`). Смещения структур дополнительно
+проверяются через `BUILD_BUG_ON`.
 
-| Вход | SHA-256 |
+Хеши конфигурации дерева сборки:
+
+| Файл | SHA-256 |
 |---|---|
 | `.config` | `1f0d989dfca069ffc1a869f8a01970777aef718bf9746c1bc6e4ce3b239f46e9` |
 | `include/config/auto.conf` | `7fa43a27c0b46f359560592be5588a52a3ddecd46accd16fdc3491354a1b7ee1` |
 | `include/generated/autoconf.h` | `a90cb5e2f72f8ba45b50778e153fa0557fb2509372f5b585797f6671f98a1e81` |
 
-Эти хеши фиксируют конфигурацию, а не все исходники и заголовки ядра.
-Компиляционные `BUILD_BUG_ON` дополнительно проверяют используемые ABI offsets.
-
-## Оба модуля одной командой
+## Команды
 
 Из корня репозитория, с новым каталогом результата для каждого запуска:
 
 ```sh
 python3 tools/build-kernel-modules.py 5000001307 /path/to/prepared-kernel /tmp/opencode/modules-1307
 python3 tools/build-kernel-modules.py 5000001245 /path/to/prepared-kernel /tmp/opencode/modules-1245
-python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/opencode/modules-factory
 python3 tools/build-kernel-modules.py 5000001248 /path/to/prepared-kernel /tmp/opencode/modules-1248
+python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/opencode/modules-factory
 ```
 
-Можно использовать одно проверенное подготовленное дерево для всех четырёх команд.
-Скрипт копирует его в `OUTPUT/work/headers`, устанавливает release выбранного
-профиля в этой копии и собирает из чистой копии отслеживаемых исходников.
-Изменения существующих файлов working tree учитываются; новые исходники должны
-быть добавлены в Git index. Полные исходники ядра остаются внешней зависимостью.
+Для одного модуля добавьте `--module adb` или `--module ksu`.
+Префикс GCC/binutils задаётся через `--cross-compile`.
 
-| Прошивка | Kernel release | KernelSU |
-|---|---|---|
-| `5000001307` | `5.4.125-android11-2-g601513d4b115-ab5000001307` | `v3.4.0-legacy`, version 34000 |
-| `5000001245` | `5.4.125-android11-2-g601513d4b115-ab5000001245` | `v3.4.0-legacy`, version 34000 |
-| `1982735225` | `5.4.125-android11-2-g85fe5498964f-ab1982735225` | factory patch, `v3.4.2-factory`, version 34000 |
-| `5000001248` | `5.4.125-android11-2-g601513d4b115-ab5000001248` | OTA candidate, `v3.4.0-legacy`, version 34000 |
+Скрипт копирует заголовки в `OUTPUT/work/headers`, задаёт release выбранного
+профиля и собирает чистую копию отслеживаемых исходников. Изменения working tree
+учитываются; новые исходники нужно добавить в Git index. Полные исходники ядра
+остаются внешней зависимостью.
 
 ADB release guard задаётся через `CHIRORU_KERNEL_RELEASE` при компиляции.
-Замена строк в готовом ELF больше не нужна. Для factory включаются compat hooks
-и проверка сертификата менеджера; `KSU_NEXT_MANAGER_HASH` и
-`KSU_NEXT_MANAGER_SIZE` позволяют собрать модуль для своего сертификата
-(SHA-256 DER и его размер в hex). По умолчанию используется сертификат из
-factory-профиля. Приватный ключ для сборки модулей не требуется.
+Factory-модуль использует compat hooks и проверку сертификата менеджера.
+Для собственного сертификата задайте `KSU_NEXT_MANAGER_HASH` (SHA-256 DER)
+и `KSU_NEXT_MANAGER_SIZE` (размер DER в hex). По умолчанию берутся значения
+factory-профиля. Приватный ключ для сборки модуля не требуется.
 
-Выбор одного модуля: `--module adb` или `--module ksu`. Альтернативный префикс
-GCC/binutils задаётся через `--cross-compile`.
-
-### Результат
-
-В `OUTPUT/` находятся:
-
-- `chiroru_adb.ko` и/или `kernelsu.ko` — очищенные от debug-секций модули;
-- `build-info.json` — профиль, compiler version, хеши сборщика, каталога,
-  исходников и подготовленной конфигурации, параметры сертификата factory;
-- `SHA256SUMS` — хеши модулей и манифеста;
-- `work/` — локальные исходники, заголовки, объекты и журналы зависимостей Kbuild.
-
-Для публикации предназначены `.ko`, `build-info.json` и `SHA256SUMS`.
-`work/` содержит локальные пути и внешние build inputs. Скрипт проверяет
-AArch64 ELF, точный vermagic, CRC `module_layout`, runtime guard ADB,
-сохранность runtime sections/relocations при stripping и отсутствие личных
-путей в публикуемых файлах. Хеши новой сборки могут отличаться от упакованных
-из-за compiler version, build ID и нормализации диагностических путей.
-
-## Отдельные точки входа
+### Другие точки входа
 
 ```sh
-# ADB-модуль и клиент: arm64 PIE для 1307/1245, static armv7 для factory
+# ADB-модуль и клиент: arm64 PIE или статический armv7 для factory
 ANDROID_NDK_HOME=/path/to/android-ndk \
   bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/adb-1245
 
-# KernelSU с host/binary-проверками; необязательный четвёртый аргумент — policy snapshot
+# KernelSU и проверки; четвёртым аргументом можно передать снимок SELinux policy
 bash tools/build-policy-transaction.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/ksu-1245
 
-# Совместимая factory-точка входа; также создаёт kernelsu-factory.ko
+# Factory KernelSU, включая имя kernelsu-factory.ko для совместимости
 bash tools/factory/build-module.sh /path/to/prepared-kernel /tmp/opencode/ksu-factory
 ```
 
-Factory `ksud` и менеджер собираются по [отдельной инструкции](factory/README.md#daemon-and-manager).
+Factory-демон и менеджер: [отдельная инструкция](factory/README.md#daemon-and-manager).
+
+## Результат
+
+| Файл | Содержимое |
+|---|---|
+| `chiroru_adb.ko`, `kernelsu.ko` | Модули без debug-секций |
+| `build-info.json` | Профиль, компилятор, хеши входов и параметры сертификата |
+| `SHA256SUMS` | Хеши модулей и манифеста |
+| `work/` | Рабочие исходники, заголовки и объекты с локальными путями |
+
+Для публикации используются `.ko`, манифест и контрольные суммы.
+Сборщик проверяет ELF AArch64, vermagic, CRC, ADB release guard,
+релокации и отсутствие личных путей. Хеш бинарника зависит от компилятора,
+build ID и нормализации диагностических строк.
 
 ## Проверки и включение в APK
 
@@ -131,20 +113,11 @@ CHIRORU_MODULE_WORK=/tmp/opencode/modules-1245/work \
   python3 -m unittest -v tools/test_policy_transaction.py
 ```
 
-Для необязательной сверки с полным проверенным ELF ядра `1307` задайте
-`CHIRORU_KERNEL_ELF`. Без него пропускается только сравнение с внешним ELF;
-проверки собранных объектов выполняются.
+Для сверки с полным ELF ядра `1307` задайте `CHIRORU_KERNEL_ELF`.
+Без него выполняются проверки собранных объектов, но пропускается сравнение
+с внешним ELF.
 
-Для обновления APK перенесите проверенные модули в
-`app/Chiroru/app/src/main/assets/firmware/chiron-BUILD/` и обновите их SHA-256
-в `profiles.json`. Затем выполните `verify_firmware_catalog.py`,
-`test_native_firmware_profiles.py`, APK-проверки и аппаратные проверки
-соответствующего профиля. Сборка сама не обновляет каталог ресурсов.
-
-Скрипт проверен реальной сборкой модулей всех четырёх профилей. Для первых
-трёх пар `.text` совпала с упакованными модулями 0.7.2; различия runtime sections
-ограничены build ID и диагностическими строками путей. Новый профиль `1248`
-проверен статически по OTA и запуском KernelSU на устройстве в rc2;
-аппаратная проверка ADB root ожидается. CI запускает проверки выбора
-профиля и ELF на упакованных модулях; полная cross-сборка требует внешнего
-подготовленного дерева.
+Поместите модули в `app/Chiroru/app/src/main/assets/firmware/chiron-BUILD/`,
+обновите SHA-256 в `profiles.json`, выполните проверки каталога, нативных профилей
+и готового APK. Затем проверьте загрузку на целевой прошивке.
+Сборщик не обновляет assets автоматически.

@@ -17,8 +17,8 @@ android {
         // Preserve the original loader's Android 11 behavior during this migration.
         // Raising this requires a separate review of foreground-service/boot rules.
         targetSdk = 30
-        versionCode = 33
-        versionName = "0.7.3-rc2"
+        versionCode = 36
+        versionName = "0.7.3-rc5"
         // The factory 1982735225 build ships a 32-bit-only userspace.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }
@@ -97,7 +97,15 @@ val testNativeProcessWait by tasks.registering(Exec::class) {
 }
 
 tasks.named("check").configure {
-    dependsOn(testNativeProcessWait, "testFirmwareCatalog", "testConsoleRunner", "testProcessConsole", "testAioCleanup", "testDeviceGuard", "testPolicyHostCompat")
+    dependsOn(testNativeProcessWait, "testFirmwareCatalog", "testConsoleRunner", "testProcessConsole", "testAioCleanup", "testDeviceGuard", "testPolicyHostCompat", "testKptrRestore")
+}
+
+tasks.register<Exec>("testKptrRestore") {
+    description = "Checks that KernelSU loading restores kptr_restrict."
+    group = "verification"
+    workingDir(projectDir)
+    environment("PYTHONDONTWRITEBYTECODE", "1")
+    commandLine("python3", "-m", "unittest", "scripts/test_kptr_restore.py")
 }
 
 tasks.register<Exec>("testPolicyHostCompat") {
@@ -121,7 +129,7 @@ tasks.register<Exec>("testProcessConsole") {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn(verifyPteWindowCleanup, "verifyFirmwareCatalog", "testAioCleanup", "testDeviceGuard", "testNativeFirmwareProfiles")
+    dependsOn(verifyPteWindowCleanup, "verifyFirmwareCatalog", "testAioCleanup", "testDeviceGuard", "testNativeFirmwareProfiles", "testKptrRestore")
 }
 
 tasks.register<Exec>("testNativeFirmwareProfiles") {

@@ -1,8 +1,8 @@
 # Factory 1982735225: KernelSU Next
 
-This branch targets exactly `chiron-1982735225`, Android 11, kernel
+This profile supports `chiron-1982735225`, Android 11, kernel
 `5.4.125-android11-2-g85fe5498964f-ab1982735225`, 32-bit ARM userspace.
-The existing catalog and native identity gates remain mandatory.
+The loader checks the full firmware identity before running.
 
 ## Use
 
@@ -14,10 +14,9 @@ The existing catalog and native identity gates remain mandatory.
 3. The loader authenticates the manager certificate, loads the module, installs
    the matching `ksud`, and runs post-fs-data, services and boot-completed.
 
-The module is loaded into RAM. After reboot, run Chiroru again. Userspace and
-module files live under `/data/adb`; no boot image, bootloader or OTA flashing
-is part of this procedure. Preinit/initrc generation is disabled in late-load
-mode. Existing boot settings are not changed by installing these APKs.
+The module stays in RAM until reboot. Userspace and module files live under
+`/data/adb`. This late-load setup does not flash boot images or generate
+preinit/initrc files.
 
 The factory manager has a separate signing certificate. Its SHA-256 is
 `93ef8c5f1fe906ffc294d5091c75b194dc64967cd53649aecbeda6b41ec96a3a`, DER size
@@ -26,7 +25,7 @@ Install the manager before loading KSU. Updating it to an official APK is not
 a compatible update. A manager signed with your own key requires rebuilding
 the factory module with that certificate's size and digest.
 
-## Compatibility changes
+## ABI requirements
 
 - Separate AArch32 syscall-table hooks, including `setresuid32` (208).
 - AArch32 stack pointer from `pt_regs.regs[13]`; execveat flags from argument 5.
@@ -43,8 +42,8 @@ Factory stext-relative symbols: `sys_call_table=0xEEE548`,
 `selinux_state=0x147CB10`, `selinux_blob_sizes=0xFE253C`.
 Runtime KASLR addresses are derived afresh; none is persisted.
 
-The kernel module is a cross-build against prepared 5.4.125 headers, not a
-claim to possess the exact factory kernel source. Its vermagic and
+The kernel module is built against prepared 5.4.125 headers; the exact factory
+source revision is unavailable. Its vermagic and
 `module_layout=0x8395960f` were checked against factory modules.
 
 ## Rebuild
@@ -52,7 +51,7 @@ claim to possess the exact factory kernel source. Its vermagic and
 ### Kernel module
 
 Provide a verified prepared module header tree (see
-[kernel module builds](../KERNEL_MODULES.md) and `adb-root/FACTORY-MODULE.md`),
+[kernel module builds](../KERNEL_MODULES.md) and [factory ADB module](../../adb-root/FACTORY-MODULE.md)),
 then run from the repository root:
 
 ```sh
@@ -86,7 +85,7 @@ The script remaps build-machine paths, copies the resulting daemon into the
 manager's armv7 JNI assets, and includes upstream's **static AArch64 BusyBox**.
 The factory kernel can execute that binary without `linker64`; the dynamically
 linked AArch64 `bootctl` and `waitsys` are deliberately not bundled. Boot-image
-installation and early-boot/preinit features are not supported by this port.
+installation and early-boot/preinit features are not supported.
 
 Build the manager with JDK 21, Android SDK 36 and Gradle from that checkout:
 
@@ -102,20 +101,7 @@ cd /path/to/ksu-factory/manager
 The public Chiroru APK build uses the pinned factory payloads and does not need
 Rust or kernel headers. Source patches retain KernelSU's GPL licenses.
 
-## Hardware verification
+## Limitations
 
-- Factory KSU loaded through Chiroru's exact-profile path after reboot.
-- `su -c 'id; getenforce'`: UID 0, `u:r:ksu:s0`, Enforcing.
-- Matching manager shows Working / LKM / Jailbreak, UAPI 5.
-- A temporary app was denied root, granted it through the manager, then denied
-  again after revocation. The temporary APK was removed.
-- A temporary module installed through `ksud` ran all three scripts after a
-  reboot and loading KSU through Chiroru alone: `post-fs-data`, `service` and
-  `boot-completed` each reported UID 0 and Enforcing. The test module and its
-  ZIP/log files were removed afterwards.
-- Chiroru reports the successful load, but its independent runtime query can
-  show unavailable: app seccomp blocks the read-only driver query. The manager
-  and `ksud debug info` confirm the running driver.
-- Zygisk/LSPosed compatibility is not established on factory.
-
-Raw device logs and personal identifiers are kept outside this repository.
+App seccomp can block Chiroru's runtime query. Use the manager or
+`ksud debug info` to check the driver. Zygisk/LSPosed compatibility is untested.

@@ -565,6 +565,38 @@ static int run_proc(const char *path, char *const argv[], const char *label,
 /* KernelSU restores Enforcing during insmod. Request its explicit root-domain
  * handoff in a child only; UID 0 by itself is not evidence of the KSU domain.
  * No global permissive window or app allowlist grant is needed for lifecycle. */
+static int ksu_grant_root(void) {
+  int fd = -1, rc;
+  /* Invalid reboot magic is intercepted by the bundled KSU fd API. */
+  syscall(__NR_reboot, 0xDEADBEEFUL, 0xCAFEBABEUL, 0, &fd);
+  if (fd < 0) return -1;
+  rc = ioctl(fd, _IO('K', 1), 0);
+  close(fd);
+  return rc == 0 ? 0 : -1;
+}
+
+/* insmod returns with SELinux Enforcing again, and the app domain may not
+ * write the sysctl from there. Restore it from the KSU root domain instead. */
+static int restore_kptr_as_ksu(char value) {
+  pid_t pid = fork();
+  int status = 0;
+  if (pid < 0) return -1;
+  if (pid == 0) {
+    int fd, ok;
+    if (setpgid(0, 0) != 0) _exit(126);
+    fd = open("/dev/null", O_RDWR);
+    if (fd >= 0) { dup2(fd, 0); dup2(fd, 1); dup2(fd, 2); close(fd); }
+    if (ksu_grant_root() != 0) _exit(125);
+    fd = open("/proc/sys/kernel/kptr_restrict", O_WRONLY | O_CLOEXEC);
+    if (fd < 0) _exit(124);
+    ok = write(fd, &value, 1) == 1;
+    close(fd);
+    _exit(ok ? 0 : 123);
+  }
+  while (waitpid(pid, &status, 0) < 0 && errno == EINTR) { }
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+}
+
 static int run_lifecycle_as_ksu(const char *installer, struct rpt *r) {
   int out_pipe[2];
   pid_t pid;
@@ -607,16 +639,11 @@ static int run_lifecycle_as_ksu(const char *installer, struct rpt *r) {
     dup2(out_pipe[1], STDOUT_FILENO);
     dup2(out_pipe[1], STDERR_FILENO);
     close(out_pipe[0]); close(out_pipe[1]);
-    fd = -1;
-    /* Invalid reboot magic is intercepted by the bundled KSU fd API. */
-    syscall(__NR_reboot, 0xDEADBEEFUL, 0xCAFEBABEUL, 0, &fd);
-    if (fd < 0 || ioctl(fd, _IO('K', 1), 0) != 0) {
+    if (ksu_grant_root() != 0) {
       dprintf(STDERR_FILENO, "KSU root-domain handoff failed errno=%d (%s)\n",
               errno, strerror(errno));
-      if (fd >= 0) close(fd);
       _exit(125);
     }
-    close(fd);
     fd = open("/proc/thread-self/attr/current", O_RDONLY | O_CLOEXEC);
     n = fd >= 0 ? read(fd, context, sizeof context - 1) : -1;
     if (fd >= 0) close(fd);
@@ -874,12 +901,10 @@ done:
   return rc;
 }
 
-static int load_module(void *kbuf, size_t ksize, const char *ko_path,
-                        const char *ksud_path, int run_hooks,
-                        const struct chiroru_profile *prof, uint64_t stext_hint,
-                        struct rpt *r) {
-  if (run_hooks == -1) return load_adb_module(kbuf, ksize, ko_path, ksud_path, prof, r);
-  if (prof->direct_ksu) return load_factory_ksu(kbuf, ksize, ksud_path, run_hooks, prof, stext_hint, r);
+static int load_module_relaxed(void *kbuf, size_t ksize, const char *ko_path,
+                               const char *ksud_path, int run_hooks,
+                               const struct chiroru_profile *prof, uint64_t stext_hint,
+                               struct rpt *r) {
   uint64_t phys = 0;
   char params[128];
 
@@ -889,11 +914,6 @@ static int load_module(void *kbuf, size_t ksize, const char *ko_path,
     return 0;
   }
 
-  /* kptr_restrict hides addresses from /proc/kallsyms; root can relax it. */
-  {
-    int fd = open("/proc/sys/kernel/kptr_restrict", O_WRONLY);
-    if (fd >= 0) { if (write(fd, "0", 1) != 1) {} close(fd); }
-  }
   if (kernel_phys_base(&phys) != 0) {
     rp(r, "module: cannot read /proc/iomem\n");
     return -1;
@@ -974,6 +994,61 @@ static int load_module(void *kbuf, size_t ksize, const char *ko_path,
     if (kfd >= 0) close(kfd);
     return rc == 0 ? 0 : -1;
   }
+}
+
+/* ksud resolves undefined symbols through /proc/kallsyms, which kptr_restrict
+ * hides. Relax it for the load and restore the previous value afterwards, so
+ * a KernelSU boot does not leave kernel pointers readable by every app. */
+static int load_module(void *kbuf, size_t ksize, const char *ko_path,
+                       const char *ksud_path, int run_hooks,
+                       const struct chiroru_profile *prof, uint64_t stext_hint,
+                       struct rpt *r) {
+  char old_kptr[8] = {0};
+  ssize_t old_len = 0;
+  int sysctl = -1, restore = 0, rc;
+
+  if (run_hooks == -1) return load_adb_module(kbuf, ksize, ko_path, ksud_path, prof, r);
+  if (prof->direct_ksu) return load_factory_ksu(kbuf, ksize, ksud_path, run_hooks, prof, stext_hint, r);
+  if (ksu_loaded()) return load_module_relaxed(kbuf, ksize, ko_path, ksud_path,
+                                               run_hooks, prof, stext_hint, r);
+
+  sysctl = open("/proc/sys/kernel/kptr_restrict", O_RDWR | O_CLOEXEC);
+  if (sysctl >= 0) {
+    old_len = read(sysctl, old_kptr, sizeof old_kptr - 1);
+    if (old_len < 1 || old_kptr[0] < '0' || old_kptr[0] > '2') {
+      close(sysctl);
+      sysctl = -1;
+    } else {
+      restore = old_kptr[0] != '0';
+      if (restore && (lseek(sysctl, 0, SEEK_SET) < 0 ||
+                      write(sysctl, "0", 1) != 1)) {
+        rp(r, "module: cannot relax kptr_restrict errno=%d\n", errno);
+        close(sysctl);
+        return -1;
+      }
+    }
+  }
+
+  rc = load_module_relaxed(kbuf, ksize, ko_path, ksud_path, run_hooks, prof,
+                           stext_hint, r);
+
+  if (restore) {
+    errno = 0;
+    if (lseek(sysctl, 0, SEEK_SET) == 0 &&
+        write(sysctl, old_kptr, old_len) == old_len) {
+      rp(r, "module: kptr_restrict restored=%c\n", old_kptr[0]);
+    } else {
+      int saved = errno;
+      if (restore_kptr_as_ksu(old_kptr[0]) == 0) {
+        rp(r, "module: kptr_restrict restored=%c (ksu domain)\n", old_kptr[0]);
+      } else {
+        rp(r, "module: failed to restore kptr_restrict errno=%d\n", saved);
+        rc = -1;
+      }
+    }
+  }
+  if (sysctl >= 0) close(sysctl);
+  return rc;
 }
 
 /*
