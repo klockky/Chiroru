@@ -34,8 +34,31 @@ internal data class KernelSuSupport(
     val backend: String,
     val module: FirmwareArtifact,
     val ksud: FirmwareArtifact,
+    val manager: ManagerSupport,
 ) {
     init { require(backend.matches(Regex("[a-z0-9][a-z0-9-]*"))) }
+}
+
+internal enum class ManagerSource { OFFICIAL_RELEASE, BUNDLED }
+
+/** Manager identity belongs to the kernel payload, not to the UI or device UID. */
+internal data class ManagerSupport(
+    val source: ManagerSource,
+    val packageName: String,
+    val signerSha256: String,
+    val versionCode: Long,
+    val apk: FirmwareArtifact? = null,
+) {
+    init {
+        require(packageName.matches(Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+")))
+        require(signerSha256.matches(Regex("[a-f0-9]{64}")))
+        require(versionCode > 0)
+        require((source == ManagerSource.BUNDLED) == (apk != null))
+    }
+
+    fun accepts(packageName: String, signers: List<String>, versionCode: Long): Boolean =
+        packageName == this.packageName && signers == listOf(signerSha256) &&
+            versionCode == this.versionCode
 }
 
 internal enum class FirmwareSupport {

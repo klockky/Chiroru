@@ -17,8 +17,8 @@ android {
         // Preserve the original loader's Android 11 behavior during this migration.
         // Raising this requires a separate review of foreground-service/boot rules.
         targetSdk = 30
-        versionCode = 29
-        versionName = "0.7.0"
+        versionCode = 30
+        versionName = "0.7.1"
         // The factory 1982735225 build ships a 32-bit-only userspace.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }
@@ -121,7 +121,13 @@ tasks.register<Exec>("testProcessConsole") {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn(verifyPteWindowCleanup, "verifyFirmwareCatalog", "testAioCleanup", "testDeviceGuard")
+    dependsOn(verifyPteWindowCleanup, "verifyFirmwareCatalog", "testAioCleanup", "testDeviceGuard", "testNativeFirmwareProfiles")
+}
+
+tasks.register<Exec>("testNativeFirmwareProfiles") {
+    group = "verification"
+    workingDir(projectDir)
+    commandLine("python3", "-m", "unittest", "scripts/test_native_firmware_profiles.py")
 }
 
 tasks.register<Exec>("testAioCleanup") {

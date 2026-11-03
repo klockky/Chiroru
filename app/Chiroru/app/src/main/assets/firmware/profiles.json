@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "profiles": [
     {
       "id": "chiron-5000001307",
@@ -34,6 +34,12 @@
       },
       "kernelSu": {
         "backend": "chiron-5000001307",
+        "manager": {
+          "source": "OFFICIAL_RELEASE",
+          "packageName": "com.rifsxd.ksunext",
+          "versionCode": 33355,
+          "signerSha256": "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7"
+        },
         "module": {
           "asset": "firmware/chiron-5000001307/kernelsu.ko",
           "sha256": "b4a66c69cd199276f363ff8f26deec7c5d0057b4b004a1ba50c737f4e5ca6088"
@@ -77,6 +83,16 @@
       },
       "kernelSu": {
         "backend": "chiron-1982735225",
+        "manager": {
+          "source": "BUNDLED",
+          "packageName": "com.rifsxd.ksunext",
+          "signerSha256": "93ef8c5f1fe906ffc294d5091c75b194dc64967cd53649aecbeda6b41ec96a3a",
+          "versionCode": 30046,
+          "apk": {
+            "asset": "firmware/chiron-1982735225/manager.apk",
+            "sha256": "1edb691f452605e09b213f17ccd585d8ab62c2d17889f4226426c508e43a9757"
+          }
+        },
         "module": {
           "asset": "firmware/chiron-1982735225/kernelsu.ko",
           "sha256": "22b22c88e1cd5e1832ddd72f9b585052b3703622aaff321e3840e35dce844c92"

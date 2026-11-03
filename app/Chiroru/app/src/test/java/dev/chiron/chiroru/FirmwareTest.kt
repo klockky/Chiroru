@@ -23,7 +23,7 @@ class FirmwareTest {
     private fun artifact(path: String, content: String) = FirmwareArtifact(path,
         MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(it) })
     private fun profile() = shipped.copy(kernelSu = KernelSuSupport(
-        shipped.kernelSu!!.backend, artifact("test/module", "module-v1"), artifact("test/ksud", "ksud-v1")))
+        shipped.kernelSu!!.backend, artifact("test/module", "module-v1"), artifact("test/ksud", "ksud-v1"), shipped.kernelSu!!.manager))
     private val contents = mutableMapOf("test/module" to "module-v1", "test/ksud" to "ksud-v1")
     private var assetReads = 0
     private fun assets() = FirmwareAssets(temporary.root) {
@@ -76,6 +76,87 @@ class FirmwareTest {
         FirmwareRunner(assets(), backend).run(FirmwareSelection(p.identity, p), Operation.ADB_ROOT)
         assertEquals(listOf("root:factory-adb-backend:false:mod:loader"), backend.calls)
         assertEquals("client", File(temporary.root, "firmware/${p.id}/chiroru_adb.ko.client").readText())
+    }
+
+    @Test fun bothShippedProfilesRouteEveryOperationToTheirOwnVerifiedPayloads() {
+        val catalog = FirmwareEnvironment.parseCatalog(catalogText)
+        val context = RuntimeEnvironment.getApplication()
+        for (p in catalog.profiles) {
+            val selection = catalog.select(p.identity)
+            val seen = mutableListOf<String>()
+            val store = FirmwareAssets(temporary.root) {
+                seen += it
+                context.assets.open(it)
+            }
+            val backend = object : FirmwareBackend {
+                val calls = mutableListOf<Pair<String, Boolean>>()
+                override fun supports(id: String) = true
+                override fun probe(id: String): String { calls += id to false; return "probe" }
+                override fun root(id: String, module: String?, ksud: String?, runHooks: Boolean): String {
+                    calls += id to runHooks
+                    if (module != null) {
+                        assertTrue(module.contains("/firmware/${p.id}/"))
+                        assertTrue(checkNotNull(ksud).contains("/firmware/${p.id}/"))
+                    }
+                    return "root_stage_done uid=0 euid=0\nmodule: kernelsu loaded\n"
+                }
+            }
+            val runner = FirmwareRunner(store, backend) { true }
+            Operation.entries.forEach { runner.run(selection, it) }
+            assertEquals(listOf(p.root.backend to false, p.root.backend to false,
+                p.kernelSu!!.backend to true, p.kernelSu!!.backend to false, p.adbRoot!!.backend to false), backend.calls)
+            assertEquals(listOf(p.kernelSu!!.module.asset, p.kernelSu!!.ksud.asset,
+                p.kernelSu!!.module.asset, p.kernelSu!!.ksud.asset,
+                p.adbRoot!!.module.asset, p.adbRoot!!.loader.asset, p.adbRoot!!.client.asset), seen)
+        }
+    }
+
+    @Test fun factoryManagerIsRequiredBeforeAnyNativeCallOrPayloadRead() {
+        val factory = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-1982735225" }
+        val backend = FakeBackend()
+        val runner = FirmwareRunner(assets(), backend) { false }
+        for (operation in listOf(Operation.MODULE, Operation.MODULE_SAFE)) {
+            val report = runner.run(FirmwareSelection(factory.identity, factory), operation)
+            assertTrue(report.contains("preflight: blocked"))
+            assertTrue(report.contains("matching bundled"))
+            assertFalse(ReportResult.parse(operation, report).kernelTouched)
+        }
+        assertEquals(0, backend.supportsCalls)
+        assertEquals(0, assetReads)
+        assertTrue(backend.calls.isEmpty())
+        runner.run(FirmwareSelection(factory.identity, factory), Operation.ROOT)
+        assertEquals(listOf("root:${factory.root.backend}:false:null:null"), backend.calls)
+    }
+
+    @Test fun managerRequirementsRejectCrossProfileSignersAndUnpinnedFactoryVersions() {
+        val profiles = FirmwareEnvironment.parseCatalog(catalogText).profiles
+        val official = profiles.single { it.id == "chiron-5000001307" }.kernelSu!!.manager
+        val factory = profiles.single { it.id == "chiron-1982735225" }.kernelSu!!.manager
+        assertEquals(ManagerSource.OFFICIAL_RELEASE, official.source)
+        assertEquals(ManagerSource.BUNDLED, factory.source)
+        for (requirement in listOf(official, factory)) {
+            assertTrue(requirement.accepts(requirement.packageName, listOf(requirement.signerSha256), requirement.versionCode))
+            assertFalse(requirement.accepts("other.package", listOf(requirement.signerSha256), 30046))
+            assertFalse(requirement.accepts(requirement.packageName, emptyList(), 30046))
+            assertFalse(requirement.accepts(requirement.packageName, listOf(official.signerSha256, factory.signerSha256), 30046))
+        }
+        assertFalse(factory.accepts(factory.packageName, listOf(official.signerSha256), 30046))
+        assertFalse(official.accepts(official.packageName, listOf(factory.signerSha256), 30046))
+        assertFalse(factory.accepts(factory.packageName, listOf(factory.signerSha256), 30047))
+        assertFalse(official.accepts(official.packageName, listOf(official.signerSha256), 33356))
+    }
+
+    @Test fun managerPolicyCannotDisappearOrFallBackToOfficialInTheCatalog() {
+        for (mutation in listOf("missing", "source", "apk", "versionCode")) {
+            val catalog = JSONObject(catalogText)
+            val support = catalog.getJSONArray("profiles").getJSONObject(1).getJSONObject("kernelSu")
+            when (mutation) {
+                "missing" -> support.remove("manager")
+                "source" -> support.getJSONObject("manager").put("source", "LATEST")
+                else -> support.getJSONObject("manager").remove(mutation)
+            }
+            assertThrows(Exception::class.java) { FirmwareEnvironment.parseCatalog(catalog.toString()) }
+        }
     }
 
     @Test fun nonDuoMaxIsBlockedEvenIfCatalogContainsAnExactProfile() {
@@ -152,7 +233,7 @@ class FirmwareTest {
         val p = profile()
         assertNull(FirmwareCatalog(listOf(p, p.copy(id = "another"))).select(p.identity).profile)
         assertThrows(IllegalArgumentException::class.java) {
-            FirmwareEnvironment.parseCatalog(catalogText.replace("\"schemaVersion\": 2", "\"schemaVersion\": 99"))
+            FirmwareEnvironment.parseCatalog(catalogText.replace("\"schemaVersion\": 3", "\"schemaVersion\": 99"))
         }
         assertThrows(IllegalArgumentException::class.java) { FirmwareCatalog(listOf(p, p)) }
     }

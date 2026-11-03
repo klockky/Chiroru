@@ -9,7 +9,7 @@ from pathlib import Path
 def verify(app: Path) -> None:
     assets = app / "src/main/assets"
     catalog = json.loads((assets / "firmware/profiles.json").read_text())
-    if catalog.get("schemaVersion") != 2 or not catalog.get("profiles"):
+    if catalog.get("schemaVersion") != 3 or not catalog.get("profiles"):
         raise ValueError("Missing profiles or unsupported catalog schema")
     registry = (app / "src/main/cpp/backend_registry.def").read_text()
     backends = re.findall(r'^CHIRORU_BACKEND\("([a-z0-9-]+)"', registry, re.M)
@@ -46,12 +46,28 @@ def verify(app: Path) -> None:
             support = profile.get(key)
             if support is None:
                 continue
-            if not isinstance(support, dict) or set(support) != {"backend", *kinds}:
+            expected = {"backend", *kinds} | ({"manager"} if key == "kernelSu" else set())
+            if not isinstance(support, dict) or set(support) != expected:
                 raise ValueError(f"Incomplete {label} support: {name}")
             if support["backend"] not in backends:
                 raise ValueError(f"Missing {label} native backend: {name}")
-            for kind in kinds:
-                artifact = support[kind]
+            artifacts = {kind: support[kind] for kind in kinds}
+            if key == "kernelSu":
+                manager = support["manager"]
+                source = manager.get("source")
+                required = {"source", "packageName", "signerSha256", "versionCode"}
+                if type(manager.get("versionCode")) is not int or manager["versionCode"] <= 0:
+                    raise ValueError(f"Invalid manager version: {name}")
+                if source == "BUNDLED":
+                    required |= {"apk"}
+                    artifacts["manager"] = manager["apk"]
+                elif source != "OFFICIAL_RELEASE":
+                    raise ValueError(f"Unknown manager source: {name}")
+                if set(manager) != required or not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+", manager.get("packageName", "")):
+                    raise ValueError(f"Incomplete manager identity: {name}")
+                if not re.fullmatch(r"[a-f0-9]{64}", manager["signerSha256"]):
+                    raise ValueError(f"Invalid manager certificate: {name}")
+            for kind, artifact in artifacts.items():
                 path = artifact["asset"]
                 if not all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", p) for p in path.split("/")):
                     raise ValueError(f"Invalid asset path: {path}")

@@ -20,6 +20,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import dev.chiron.chiroru.firmware.FirmwareEnvironment
+import dev.chiron.chiroru.firmware.ManagerSource
 import kotlin.coroutines.coroutineContext
 
 internal object ManagerInstaller {
@@ -32,6 +34,20 @@ internal object ManagerInstaller {
             ReportResult.parse(operation, report).moduleLoaded
 
     suspend fun ensureInstalled(context: Context, progress: (ManagerStep) -> Unit): ManagerResult = mutex.withLock {
+        val selection = FirmwareEnvironment.inspect(context)
+        val requirement = selection.profile?.kernelSu?.manager
+        if (!selection.support.canLoadKernelSu || requirement == null || requirement.source == ManagerSource.BUNDLED) {
+            mutableProgress.value = ManagerStep.CHECKING
+            progress(ManagerStep.CHECKING)
+            val ready = requirement != null && selection.support.canLoadKernelSu &&
+                runCatching { ManagerPackages.isCompatible(context, requirement) }.getOrDefault(false)
+            val result = ManagerResult(if (ready) ManagerStep.ALREADY_INSTALLED else ManagerStep.ERROR,
+                if (ready) "manager: matching bundled manager is installed\n"
+                else "manager: install the matching bundled manager from Chiroru before loading\n")
+            mutableProgress.value = result.step
+            progress(result.step)
+            return@withLock result
+        }
         val dispatcher = AppIo.dispatcher
         ManagerProvisioning(AndroidBackend(context.applicationContext, dispatcher)).ensureInstalled { step ->
             mutableProgress.value = step
@@ -47,14 +63,22 @@ internal object ManagerInstaller {
         private val dispatcher: kotlinx.coroutines.ExecutorCoroutineDispatcher,
     ) : ManagerInstallBackend {
         override suspend fun isInstalled(): Boolean = withContext(dispatcher) {
-            try {
-                context.packageManager.getPackageInfo(ManagerReleases.PACKAGE,
-                    PackageManager.MATCH_DIRECT_BOOT_AWARE or PackageManager.MATCH_DIRECT_BOOT_UNAWARE)
-                true
-            } catch (_: PackageManager.NameNotFoundException) { false }
+            val requirement = officialRequirement()
+            val info = ManagerPackages.installed(context, requirement)
+            check(info == null || ManagerPackages.accepts(info, requirement)) { "Installed manager signature does not match this firmware" }
+            info != null
+        }
+
+        private fun officialRequirement() = FirmwareEnvironment.inspect(context).let { selection ->
+            check(selection.support.canLoadKernelSu) { "No exact KernelSU firmware profile" }
+            checkNotNull(selection.profile?.kernelSu).manager.also {
+                check(it.source == ManagerSource.OFFICIAL_RELEASE && it.packageName == ManagerReleases.PACKAGE &&
+                    it.signerSha256 == ManagerReleases.SIGNER_SHA256) { "Official manager download is not supported by this profile" }
+            }
         }
 
         override suspend fun download(): DownloadedManager = withContext(dispatcher) {
+            officialRequirement()
             val release = connect(URL(ManagerReleases.API)).useConnection { connection ->
                 connection.inputStream.bufferedReader().use { reader ->
                     val metadata = reader.readTextLimited(1024 * 1024)
@@ -89,6 +113,7 @@ internal object ManagerInstaller {
         }
 
         override suspend fun verify(apk: DownloadedManager) = withContext(dispatcher) {
+            val requirement = officialRequirement()
             val digest = MessageDigest.getInstance("SHA-256")
             apk.file.inputStream().use { input ->
                 val buffer = ByteArray(64 * 1024)
@@ -103,6 +128,7 @@ internal object ManagerInstaller {
                 apk.file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES,
             )) { "Downloaded file is not a readable APK" }
             check(info.packageName == ManagerReleases.PACKAGE) { "Unexpected APK package: ${info.packageName}" }
+            check(ManagerPackages.accepts(info, requirement)) { "Manager APK does not match this firmware's certificate/version" }
             check(checkNotNull(info.applicationInfo).minSdkVersion <= Build.VERSION.SDK_INT) { "Manager requires a newer Android version" }
             val signers = checkNotNull(info.signingInfo).apkContentsSigners
             check(signers.size == 1 && MessageDigest.getInstance("SHA-256").digest(signers.single().toByteArray()).hex() ==

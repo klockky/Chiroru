@@ -45,12 +45,15 @@ class PolicyHostCompatTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "compat32.c"
             binary = Path(directory) / "compat32"
+            source.write_text("#include <stdio.h>\nint main(void) { return 0; }\n")
+            probe = subprocess.run(["cc", "-m32", str(source), "-o", str(binary)], capture_output=True, text=True)
+            if probe.returncode != 0:
+                self.skipTest("32-bit host toolchain unavailable: " + probe.stderr[-160:])
             source.write_text(SOURCE)
             build = subprocess.run(
                 ["cc", "-m32", "-std=gnu11", "-I", str(include), str(source), "-o", str(binary)],
                 capture_output=True, text=True)
-            if build.returncode != 0:
-                self.skipTest("32-bit host toolchain unavailable: " + build.stderr[-160:])
+            self.assertEqual(build.returncode, 0, build.stderr)
             run = subprocess.run([str(binary)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(run.stdout.strip(), "ok")

@@ -124,4 +124,9 @@
     <string name="manager_already_installed">Менеджер уже установлен.</string>
     <string name="manager_error">KernelSU загружен. Не удалось установить менеджер — подробности в журнале.</string>
     <string name="manager_retry">Повторить установку менеджера</string>
+    <string name="manager_bundled_required">Для этой прошивки перед загрузкой KernelSU нужен встроенный armv7-менеджер. Если Android запросит разрешение на установку из Chiroru, разрешите и нажмите «Установить» снова. После установки вернитесь сюда и запустите root.</string>
+    <string name="manager_bundled_install">Установить совместимый менеджер</string>
+    <string name="manager_bundled_ready">Совместимый factory armv7-менеджер установлен.</string>
+    <string name="manager_bundled_conflict">Подпись или версия установленного менеджера не соответствует этой прошивке. Сохраните нужные настройки менеджера и устраните конфликт установки перед загрузкой KernelSU.</string>
+    <string name="manager_bundled_unavailable">Не удалось проверить менеджер. Откройте Chiroru заново для повторной проверки.</string>
 </resources>

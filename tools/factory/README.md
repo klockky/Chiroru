@@ -6,9 +6,11 @@ The existing catalog and native identity gates remain mandatory.
 
 ## Use
 
-1. Install the factory armv7 KernelSU Next manager built below
-   (`com.rifsxd.ksunext`). The official 64-bit APK cannot run on this userspace.
-2. Install this branch's Chiroru APK. After a fresh boot, select KernelSU.
+1. Install the universal Chiroru APK. On factory, use **Install matching manager**
+   to install its bundled armv7 KernelSU Next manager (`com.rifsxd.ksunext`).
+   Allow installation from Chiroru if Android asks, then press the button again.
+   The official 64-bit APK cannot run on this userspace.
+2. Return to Chiroru. After a fresh boot, select KernelSU.
 3. The loader authenticates the manager certificate, loads the module, installs
    the matching `ksud`, and runs post-fs-data, services and boot-completed.
 
@@ -59,7 +61,8 @@ bash tools/factory/build-module.sh /path/to/factory-headers /tmp/opencode/factor
 The script copies tracked `build-txn` source, applies `kernel.patch`, builds,
 and strips debug information while verifying runtime sections and relocations.
 Set `KSU_NEXT_MANAGER_SIZE` and `KSU_NEXT_MANAGER_HASH` when using your own
-manager signing certificate. Re-pin the resulting asset in `profiles.json`.
+manager signing certificate. Re-pin the resulting asset in `profiles.json`,
+including the manager APK hash, certificate and version in `kernelSu.manager`.
 Reboot between module revisions; live unloading is not a tested rollback path.
 
 ### Daemon and manager

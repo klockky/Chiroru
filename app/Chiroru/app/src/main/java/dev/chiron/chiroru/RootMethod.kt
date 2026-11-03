@@ -14,6 +14,7 @@ internal enum class RootMethod(val id: String, val operation: Operation, val lab
     }
 
     fun canRun(state: AppState): Boolean = supported(state) && state.running == null &&
+        !state.preparingManager && (this != KERNEL_SU || state.bundledManager == null || state.bundledManager == BundledManagerState.READY) &&
         !state.console.running && state.managerStep?.busy != true &&
         (this == PROBE || (!state.kernelTouched && !state.checkingRuntime && !state.runtime.blocksRootOperation))
 

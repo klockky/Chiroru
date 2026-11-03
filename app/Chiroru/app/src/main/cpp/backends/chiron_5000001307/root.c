@@ -96,11 +96,11 @@ struct chiroru_vendor_sym { const char *name; uint64_t off; };
 
 struct chiroru_profile {
   const char *id;
-  /* Exact identity gate; NULL disables the native check (the app catalog
-   * already selected this profile, but defense in depth is cheap). */
+  /* Mandatory exact identity gate, shared by all native root entry points. */
   const char *fingerprint;
   const char *incremental;
   const char *kernel_release;
+  const char *machine;
   uint64_t image_pa;          /* physical start of the arm64 Image        */
   uint64_t init_task_pa;      /* physical address of init_task           */
   /* Legacy profiles derive the linear-map base from init_task.tasks.next
@@ -131,6 +131,7 @@ static const struct chiroru_profile profile_5000001307 = {
     .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001307:user/dev-keys",
     .incremental = "5000001307",
     .kernel_release = "5.4.125-android11-2-g601513d4b115-ab5000001307",
+    .machine = "aarch64",
     .image_pa = 0x1080000ULL,
     .init_task_pa = 0x22f7500ULL,   /* page 0x22f7000, tasks.next at 0x918 */
     .use_magic_lbase = 1,
@@ -160,6 +161,7 @@ static const struct chiroru_profile profile_1982735225 = {
     .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1982735225:user/dev-keys",
     .incremental = "1982735225",
     .kernel_release = "5.4.125-android11-2-g85fe5498964f-ab1982735225",
+    .machine = "armv8l",
     .image_pa = 0x1080000ULL,
     .init_task_pa = 0x22f7480ULL,   /* page 0x22f7000, tasks.next at 0x898 */
     .use_magic_lbase = 0,
@@ -655,9 +657,10 @@ static int load_adb_module(void *kbuf, size_t ksize, const char *ko_path,
   if (restore_kptr && (lseek(sysctl, 0, SEEK_SET) < 0 || write(sysctl, "0", 1) != 1)) goto done;
   stext = kallsyms_stext();
   rp(r, "adb_root: _stext=0x%llx\n", (unsigned long long)stext);
+  /* Both ADB modules import only the two SELinux data symbols, regardless
+   * of how many additional symbols the profile's KernelSU module needs. */
   if (!stext || !ko_path ||
-      patch_vendor_syms(kbuf, ksize, stext, prof,
-                        prof->direct_adb ? 2 : prof->vendor_count, r)) goto done;
+      patch_vendor_syms(kbuf, ksize, stext, prof, 2, r)) goto done;
   if (snprintf(source, sizeof source, "%s.client", ko_path) >= (int)sizeof source) goto done;
   if (prof->direct_adb) {
     /* The factory userspace is 32-bit and has no linker64, so the bundled
@@ -1386,6 +1389,8 @@ out:
  * So the loop below only repeats stage-0 failures, and the cred/seccomp/module
  * stage runs at most once.
  */
+static int profile_gate(const struct chiroru_profile *prof, struct rpt *r);
+
 static int chiroru_root_with(const struct chiroru_profile *prof,
                              const char *ko_path, const char *ksud_path,
                              int run_hooks, struct rpt *r) {
@@ -1396,6 +1401,7 @@ static int chiroru_root_with(const struct chiroru_profile *prof,
   void *kmap = MAP_FAILED;
   int kfd = -1;
 
+  if (profile_gate(prof, r) != 0) return -1;
 
   /* Open and pre-fault the module NOW, while the process is still a plain
    * app. After the cred patch the SELinux domain is still untrusted_app, and
@@ -1445,18 +1451,23 @@ static int chiroru_root_with(const struct chiroru_profile *prof,
   return -1;
 }
 
-/* Exact identity gate for profiles that carry one.  Reads only properties and
+/* Mandatory exact identity gate for both profiles. Reads only properties and
  * uname; it never touches the kernel. */
 static int profile_gate(const struct chiroru_profile *prof, struct rpt *r) {
-  char fp[192] = {0}, inc[96] = {0};
+  char fp[192] = {0}, inc[96] = {0}, sdk[16] = {0};
   struct utsname u;
 
-  if (!prof->fingerprint) return 0;
+  if (!prof->fingerprint || !prof->incremental || !prof->kernel_release || !prof->machine) {
+    rp(r, "preflight: blocked (incomplete firmware profile)\n");
+    return -1;
+  }
   __system_property_get("ro.build.fingerprint", fp);
   __system_property_get("ro.build.version.incremental", inc);
+  __system_property_get("ro.build.version.sdk", sdk);
   if (uname(&u) != 0) { rp(r, "preflight: blocked (uname failed)\n"); return -1; }
   if (strcmp(fp, prof->fingerprint) || strcmp(inc, prof->incremental) ||
-      strcmp(u.release, prof->kernel_release)) {
+      strcmp(u.release, prof->kernel_release) || strcmp(u.machine, prof->machine) ||
+      strcmp(sdk, "30") || sysconf(_SC_PAGESIZE) != 4096) {
     rp(r, "preflight: blocked (firmware mismatch)\n"
           "  have: %s / %s / %s\n  need: %s / %s / %s\n",
        fp, inc, u.release, prof->fingerprint, prof->incremental,
@@ -1473,11 +1484,6 @@ int chiron_5000001307_root(const char *ko_path, const char *ksud_path,
 
 int chiron_1982735225_root(const char *ko_path, const char *ksud_path,
                            int run_hooks, struct rpt *r) {
-  if (profile_gate(&profile_1982735225, r) != 0) return -1;
-  if (ko_path && !profile_1982735225.modules_supported) {
-    rp(r, "factory: kernel module bootstrap is not built for this kernel yet\n");
-    return -2;
-  }
   return chiroru_root_with(&profile_1982735225, ko_path, ksud_path, run_hooks, r);
 }
 

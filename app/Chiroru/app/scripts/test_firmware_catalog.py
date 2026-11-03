@@ -66,6 +66,19 @@ class FirmwareCatalogTest(unittest.TestCase):
                     self.check()
                 path.write_bytes(content)
 
+    def test_bundled_manager_requires_identity_version_and_hash(self):
+        manager = self.profile["kernelSu"]["manager"]
+        manager.update(source="BUNDLED", versionCode=30046,
+                       apk={"asset": "manager.apk", "sha256": hashlib.sha256(b"manager").hexdigest()})
+        (self.assets / "manager.apk").write_bytes(b"manager")
+        self.check()
+        (self.assets / "manager.apk").write_bytes(b"other firmware manager")
+        with self.assertRaisesRegex(ValueError, "Payload hash mismatch"):
+            self.check()
+        manager["source"] = "LATEST"
+        with self.assertRaisesRegex(ValueError, "Unknown manager source"):
+            self.check()
+
     def test_declared_kernel_su_requires_its_own_compiled_backend(self):
         self.profile["kernelSu"]["backend"] = "not-compiled"
         with self.assertRaisesRegex(ValueError, "Missing KernelSU native backend"):
@@ -88,7 +101,7 @@ class FirmwareCatalogTest(unittest.TestCase):
         self.catalog["schemaVersion"] = 1
         with self.assertRaisesRegex(ValueError, "unsupported catalog schema"):
             self.check()
-        self.catalog["schemaVersion"] = 2
+        self.catalog["schemaVersion"] = 3
         self.profile["root"]["backend"] = "not-compiled"
         with self.assertRaisesRegex(ValueError, "Missing label/native backend"):
             self.check()
