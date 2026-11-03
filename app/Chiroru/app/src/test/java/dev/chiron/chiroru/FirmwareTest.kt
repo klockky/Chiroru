@@ -139,6 +139,18 @@ class FirmwareTest {
         assertEquals(previous.kernelSu!!.manager, candidate.kernelSu!!.manager)
     }
 
+    @Test fun nextOtaProfileIsSelectedOnlyByItsExactIdentity() {
+        val catalog = FirmwareEnvironment.parseCatalog(catalogText)
+        val candidate = catalog.profiles.single { it.id == "chiron-5000001289" }
+        val previous = catalog.profiles.single { it.id == "chiron-5000001248" }
+        assertEquals(candidate, catalog.select(candidate.identity).profile)
+        assertTrue(candidate.label.contains("OTA test"))
+        assertNull(catalog.select(candidate.identity.copy(kernelRelease = previous.identity.kernelRelease)).profile)
+        assertNull(catalog.select(candidate.identity.copy(incremental = "5000001288")).profile)
+        assertNotEquals(previous.adbRoot!!.module.sha256, candidate.adbRoot!!.module.sha256)
+        assertEquals(previous.kernelSu!!.manager, candidate.kernelSu!!.manager)
+    }
+
     @Test fun factoryManagerIsRequiredBeforeAnyNativeCallOrPayloadRead() {
         val factory = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-1982735225" }
         val backend = FakeBackend()

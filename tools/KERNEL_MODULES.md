@@ -58,6 +58,7 @@ symbols ожидаемы (`KBUILD_MODPOST_WARN=1`). Смещения струк�
 python3 tools/build-kernel-modules.py 5000001307 /path/to/prepared-kernel /tmp/opencode/modules-1307
 python3 tools/build-kernel-modules.py 5000001245 /path/to/prepared-kernel /tmp/opencode/modules-1245
 python3 tools/build-kernel-modules.py 5000001248 /path/to/prepared-kernel /tmp/opencode/modules-1248
+python3 tools/build-kernel-modules.py 5000001289 /path/to/prepared-kernel /tmp/opencode/modules-1289
 python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/opencode/modules-factory
 ```
 
