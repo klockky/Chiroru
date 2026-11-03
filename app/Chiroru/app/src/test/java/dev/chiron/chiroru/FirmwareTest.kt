@@ -19,7 +19,7 @@ class FirmwareTest {
     @get:Rule val temporary = TemporaryFolder()
     private val catalogText get() = RuntimeEnvironment.getApplication().assets
         .open("firmware/profiles.json").bufferedReader().use { it.readText() }
-    private val shipped get() = FirmwareEnvironment.parseCatalog(catalogText).profiles.single()
+    private val shipped get() = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-5000001307" }
     private fun artifact(path: String, content: String) = FirmwareArtifact(path,
         MessageDigest.getInstance("SHA-256").digest(content.toByteArray()).joinToString("") { "%02x".format(it) })
     private fun profile() = shipped.copy(kernelSu = KernelSuSupport(
@@ -52,6 +52,30 @@ class FirmwareTest {
             "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001307:user/dev-keys", "5000001307", 30,
             "5.4.125-android11-2-g601513d4b115-ab5000001307", "aarch64", 4096)
         assertEquals("chiron-5000001307", FirmwareEnvironment.parseCatalog(catalogText).select(identity).profile?.id)
+    }
+
+    @Test fun factoryProfileIsSelectedByExactIdentityAndOffersAdbWithoutKernelSu() {
+        val identity = FirmwareIdentity("chiron", "YNDX-00055",
+            "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1982735225:user/dev-keys", "1982735225", 30,
+            "5.4.125-android11-2-g85fe5498964f-ab1982735225", "armv8l", 4096)
+        val selection = FirmwareEnvironment.parseCatalog(catalogText).select(identity)
+        assertEquals("chiron-1982735225", selection.profile?.id)
+        assertEquals(FirmwareSupport.ROOT_ONLY, selection.support)
+        assertNull(selection.profile?.kernelSu)
+        assertEquals("chiron-1982735225-adb", selection.profile?.adbRoot?.backend)
+    }
+
+    @Test fun factoryAdbRootUsesItsOwnStaticClientWithoutKernelSu() {
+        val factory = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-1982735225" }
+        contents.clear()
+        contents.putAll(mapOf("test/mod" to "mod", "test/loader" to "loader", "test/client" to "client"))
+        val p = factory.copy(adbRoot = AdbRootSupport("factory-adb-backend",
+            artifact("test/mod", "mod"), artifact("test/loader", "loader"),
+            artifact("test/client", "client")))
+        val backend = FakeBackend()
+        FirmwareRunner(assets(), backend).run(FirmwareSelection(p.identity, p), Operation.ADB_ROOT)
+        assertEquals(listOf("root:factory-adb-backend:false:mod:loader"), backend.calls)
+        assertEquals("client", File(temporary.root, "firmware/${p.id}/chiroru_adb.ko.client").readText())
     }
 
     @Test fun nonDuoMaxIsBlockedEvenIfCatalogContainsAnExactProfile() {
@@ -229,7 +253,7 @@ class FirmwareTest {
             val catalog = JSONObject(catalogText)
             val entry = catalog.getJSONArray("profiles").getJSONObject(0)
             if (explicitNull) entry.put("kernelSu", JSONObject.NULL) else entry.remove("kernelSu")
-            val profile = FirmwareEnvironment.parseCatalog(catalog.toString()).profiles.single()
+            val profile = FirmwareEnvironment.parseCatalog(catalog.toString()).profiles.single { it.id == "chiron-5000001307" }
             assertNull(profile.kernelSu)
             val selection = FirmwareCatalog(listOf(profile)).select(profile.identity)
             assertEquals(FirmwareSupport.ROOT_ONLY, selection.support)

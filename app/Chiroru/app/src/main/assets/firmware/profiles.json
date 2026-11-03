@@ -43,6 +43,38 @@
           "sha256": "7794fb0546955e10b3b61a2771b325d52e47ac1d4702970c9a46e3b1667db042"
         }
       }
+    },
+    {
+      "id": "chiron-1982735225",
+      "label": "Duo Max · factory 1982735225",
+      "match": {
+        "device": "chiron",
+        "model": "YNDX-00055",
+        "fingerprint": "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1982735225:user/dev-keys",
+        "incremental": "1982735225",
+        "sdk": 30,
+        "kernelRelease": "5.4.125-android11-2-g85fe5498964f-ab1982735225",
+        "machine": "armv8l",
+        "pageSize": 4096
+      },
+      "root": {
+        "backend": "chiron-1982735225"
+      },
+      "adbRoot": {
+        "backend": "chiron-1982735225-adb",
+        "module": {
+          "asset": "firmware/chiron-1982735225/chiroru_adb.ko",
+          "sha256": "f41bb8bd85f35895c7ec8bc9a7bc4be5d5bbe8e778ceb42023e8df0b2db517f7"
+        },
+        "loader": {
+          "asset": "common/ksud-3.4.2",
+          "sha256": "7794fb0546955e10b3b61a2771b325d52e47ac1d4702970c9a46e3b1667db042"
+        },
+        "client": {
+          "asset": "firmware/chiron-1982735225/chiroru-su",
+          "sha256": "fbde93588765d2970056cb381ef28b61e6c12f013ef41e8c0308b00b458a1e85"
+        }
+      }
     }
   ]
 }

@@ -17,9 +17,10 @@ android {
         // Preserve the original loader's Android 11 behavior during this migration.
         // Raising this requires a separate review of foreground-service/boot rules.
         targetSdk = 30
-        versionCode = 28
-        versionName = "0.6.5"
-        ndk { abiFilters += "arm64-v8a" }
+        versionCode = 29
+        versionName = "0.7.0"
+        // The factory 1982735225 build ships a 32-bit-only userspace.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -96,7 +97,15 @@ val testNativeProcessWait by tasks.registering(Exec::class) {
 }
 
 tasks.named("check").configure {
-    dependsOn(testNativeProcessWait, "testFirmwareCatalog", "testConsoleRunner", "testProcessConsole", "testAioCleanup", "testDeviceGuard")
+    dependsOn(testNativeProcessWait, "testFirmwareCatalog", "testConsoleRunner", "testProcessConsole", "testAioCleanup", "testDeviceGuard", "testPolicyHostCompat")
+}
+
+tasks.register<Exec>("testPolicyHostCompat") {
+    description = "Compiles the host policy shims as 32-bit and checks ebitmap bit helpers."
+    group = "verification"
+    workingDir(projectDir)
+    environment("PYTHONDONTWRITEBYTECODE", "1")
+    commandLine("python3", "-m", "unittest", "scripts/test_policy_host_compat.py")
 }
 
 tasks.register<Exec>("testConsoleRunner") {

@@ -26,6 +26,9 @@ class FirmwareCatalogTest(unittest.TestCase):
         self.profile.pop("adbRoot", None)
         self.profile["root"]["backend"] = "root-backend"
         self.profile["kernelSu"]["backend"] = "ksu-backend"
+        # These tests exercise one mutated profile against their own small
+        # registry; drop the other shipped profiles (they have their own IDs).
+        self.catalog["profiles"] = [self.profile]
         for kind in ("module", "ksud"):
             content = f"fixture {kind}".encode()
             self.profile["kernelSu"][kind] = {"asset": kind, "sha256": hashlib.sha256(content).hexdigest()}

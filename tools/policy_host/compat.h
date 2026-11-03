@@ -35,7 +35,12 @@ typedef uint64_t __be64;
 typedef int gfp_t;
 #define __user
 #define __init
+#if defined(__LP64__) || defined(_LP64)
 #define CONFIG_64BIT 1
+#define BITS_PER_LONG 64
+#else
+#define BITS_PER_LONG 32
+#endif
 #define CONFIG_PREEMPT_COUNT 1
 #define CONFIG_PREEMPTION 1
 #define KERNEL_VERSION(a,b,c) (((a) << 16) | ((b) << 8) | (c))
@@ -49,7 +54,6 @@ typedef int gfp_t;
 #define U32_MAX UINT32_MAX
 #define U16_MAX UINT16_MAX
 #define U8_MAX UINT8_MAX
-#define BITS_PER_LONG 64
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #define BUG_ON(x) assert(!(x))
 #define WARN_ON(x) (!!(x))
@@ -132,13 +136,16 @@ static inline struct kmem_cache *kmem_cache_create(const char *name, size_t size
 #define kmem_cache_free(c,p) free(p)
 static inline unsigned long find_next_bit(const unsigned long *a, unsigned long n,
                                           unsigned long start) {
+    const unsigned long bits = sizeof(unsigned long) * 8;
     for (; start < n; start++)
-        if (a[start / 64] & (1UL << (start % 64))) break;
+        if (a[start / bits] & ((unsigned long)1 << (start % bits))) break;
     return start;
 }
 #define find_first_bit(a,n) find_next_bit(a,n,0)
 static inline int fls(unsigned int x) { return x ? 32 - __builtin_clz(x) : 0; }
-static inline unsigned long __fls(unsigned long x) { return 63 - __builtin_clzl(x); }
+static inline unsigned long __fls(unsigned long x) {
+    return (sizeof(unsigned long) * 8 - 1) - (unsigned long)__builtin_clzl(x);
+}
 static inline unsigned long partial_name_hash(unsigned long c, unsigned long prev) {
     return (prev + (c << 4) + (c >> 4)) * 11;
 }
