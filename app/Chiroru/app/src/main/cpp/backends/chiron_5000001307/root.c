@@ -34,6 +34,7 @@
 #include <sys/system_properties.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <android/log.h>
 
 typedef uint8_t u8;
@@ -112,6 +113,7 @@ struct chiroru_profile {
   uint64_t kimage_voffset_pa;
   int modules_supported;
   int direct_adb;             /* load the ADB .ko with init_module, no ksud */
+  int direct_ksu;             /* factory: relocate ELF64 from a 32-bit app */
   int vendor_count;
   const struct chiroru_vendor_sym *vendor;
 };
@@ -141,6 +143,9 @@ static const struct chiroru_profile profile_5000001307 = {
 static const struct chiroru_vendor_sym vendor_syms_1982735225[] = {
     {"selinux_state", 0x147CB10ULL},
     {"selinux_blob_sizes", 0xFE253CULL},
+    {"sys_call_table", 0xEEE548ULL},
+    {"init_mm", 0x12BE860ULL},
+    {"compat_sys_call_table", 0xEF2FD0ULL},
 };
 
 /* 1982735225 (factory, Android 11, 5.4.125-ab1982735225, 32-bit userspace).
@@ -161,9 +166,10 @@ static const struct chiroru_profile profile_1982735225 = {
     .memstart_addr_pa = 0x20620c8ULL,
     .vabits_actual_pa = 0x2097b20ULL,
     .kimage_voffset_pa = 0x20620d8ULL,
-    .modules_supported = 0,         /* KernelSU is not built for this kernel */
+    .modules_supported = 1,
     .direct_adb = 1,                /* 32-bit userspace has no 64-bit ksud */
-    .vendor_count = 2,
+    .direct_ksu = 1,
+    .vendor_count = 5,
     .vendor = vendor_syms_1982735225,
 };
 #define WALK_SUB       T_TASKS      /* va -> task_struct                    */
@@ -493,7 +499,7 @@ static int run_proc(const char *path, char *const argv[], const char *label,
 /* KernelSU restores Enforcing during insmod. Request its explicit root-domain
  * handoff in a child only; UID 0 by itself is not evidence of the KSU domain.
  * No global permissive window or app allowlist grant is needed for lifecycle. */
-static int run_lifecycle_as_ksu(struct rpt *r) {
+static int run_lifecycle_as_ksu(const char *installer, struct rpt *r) {
   int out_pipe[2];
   pid_t pid;
   char out[8192];
@@ -510,6 +516,7 @@ static int run_lifecycle_as_ksu(struct rpt *r) {
         "echo \"lifecycle shell uid=$(id -u) context=$(cat /proc/self/attr/current)\"\n"
         "[ \"$(id -u)\" = 0 ] || exit 21\n"
         "[ \"$(cat /proc/self/attr/current)\" = 'u:r:ksu:s0' ] || exit 22\n"
+        "if [ -n \"$1\" ]; then \"$1\" install || exit $?; fi\n"
         "run_stage() {\n"
         "  event=\"$1\"\n"
         "  marker=\"/data/adb/ksu/.chiroru-$boot_id-$event\"\n"
@@ -529,7 +536,8 @@ static int run_lifecycle_as_ksu(struct rpt *r) {
     const char target[] = "u:r:ksu:s0";
     ssize_t n;
     int fd;
-    char *argv[] = {(char *)"sh", (char *)"-c", (char *)shell_script, NULL};
+    char *argv[] = {(char *)"sh", (char *)"-c", (char *)shell_script,
+                   (char *)"chiroru-lifecycle", (char *)(installer ? installer : ""), NULL};
     dup2(out_pipe[1], STDOUT_FILENO);
     dup2(out_pipe[1], STDERR_FILENO);
     close(out_pipe[0]); close(out_pipe[1]);
@@ -648,7 +656,8 @@ static int load_adb_module(void *kbuf, size_t ksize, const char *ko_path,
   stext = kallsyms_stext();
   rp(r, "adb_root: _stext=0x%llx\n", (unsigned long long)stext);
   if (!stext || !ko_path ||
-      patch_vendor_syms(kbuf, ksize, stext, prof, prof->vendor_count, r)) goto done;
+      patch_vendor_syms(kbuf, ksize, stext, prof,
+                        prof->direct_adb ? 2 : prof->vendor_count, r)) goto done;
   if (snprintf(source, sizeof source, "%s.client", ko_path) >= (int)sizeof source) goto done;
   if (prof->direct_adb) {
     /* The factory userspace is 32-bit and has no linker64, so the bundled
@@ -715,11 +724,95 @@ done:
   return rc;
 }
 
+/* Android 11 installs packages either directly in /data/app or one directory
+ * below it. Resolve only the exact manager package, without following links.
+ * The module independently verifies the APK certificate and package UID. */
+static int factory_manager_path(const char *directory, int depth,
+                                char *out, size_t capacity) {
+  DIR *dir = opendir(directory);
+  struct dirent *entry;
+  int found = 0;
+  if (!dir) return 0;
+  while ((entry = readdir(dir))) {
+    char child[1024];
+    struct stat st;
+    const char *name = entry->d_name;
+    if (name[0] == '.' || strspn(name,
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+=-") != strlen(name)) continue;
+    if (snprintf(child, sizeof child, "%s/%s", directory, name) >= (int)sizeof child ||
+        lstat(child, &st) || !S_ISDIR(st.st_mode)) continue;
+    if (!strncmp(name, "com.rifsxd.ksunext-", strlen("com.rifsxd.ksunext-"))) {
+      char apk[1024];
+      if (snprintf(apk, sizeof apk, "%s/base.apk", child) >= (int)sizeof apk ||
+          lstat(apk, &st) || !S_ISREG(st.st_mode) || strlen(apk) >= capacity) continue;
+      if (found) { found = -1; break; }
+      strcpy(out, apk);
+      found = 1;
+    } else if (depth > 0) {
+      char nested[1024];
+      int n = factory_manager_path(child, depth - 1, nested, sizeof nested);
+      if (n < 0 || (n && found)) { found = -1; break; }
+      if (n && strlen(nested) < capacity) { strcpy(out, nested); found = 1; }
+    }
+  }
+  closedir(dir);
+  return found;
+}
+
+static int load_factory_ksu(void *kbuf, size_t ksize, const char *ksud_path,
+                            int run_hooks, const struct chiroru_profile *prof,
+                            uint64_t stext_hint, struct rpt *r) {
+  char apk[1024], params[1200], old_kptr[8] = {0};
+  uint64_t phys = 0, stext;
+  int sysctl = -1, restore = 0, rc = -1;
+  ssize_t old_len = 0;
+  if (ksu_loaded()) {
+    rp(r, "module: kernelsu already loaded; lifecycle skipped\n");
+    return 0;
+  }
+  if (!ksud_path || access(ksud_path, X_OK) ||
+      factory_manager_path("/data/app", 1, apk, sizeof apk) != 1) {
+    rp(r, "factory KSU: install the matching armv7 manager before loading\n");
+    return -1;
+  }
+  sysctl = open("/proc/sys/kernel/kptr_restrict", O_RDWR | O_CLOEXEC);
+  if (sysctl < 0) goto done;
+  old_len = read(sysctl, old_kptr, sizeof old_kptr - 1);
+  if (old_len < 1 || old_kptr[0] < '0' || old_kptr[0] > '2') goto done;
+  restore = old_kptr[0] != '0';
+  if (restore && (lseek(sysctl, 0, SEEK_SET) < 0 || write(sysctl, "0", 1) != 1)) goto done;
+  stext = stext_hint ? stext_hint : kallsyms_stext();
+  if (!stext || kernel_phys_base(&phys) ||
+      patch_vendor_syms(kbuf, ksize, stext, prof, prof->vendor_count, r) ||
+      patch_module_symbols(kbuf, ksize, r)) goto done;
+  if (snprintf(params, sizeof params,
+      "ksu_phys_base=0x%llx allow_shell=1 manager_apk=%s",
+      (unsigned long long)phys, apk) >= (int)sizeof params) goto done;
+  if (syscall(__NR_init_module, kbuf, (unsigned long)ksize, params)) {
+    rp(r, "factory KSU: init_module errno=%d (%s)\n", errno, strerror(errno));
+    goto done;
+  }
+  rp(r, "module: kernelsu loaded\n");
+  rc = 0;
+done:
+  if (restore && (lseek(sysctl, 0, SEEK_SET) < 0 || write(sysctl, old_kptr, old_len) != old_len)) {
+    rp(r, "factory KSU: failed to restore kptr_restrict\n");
+    rc = -1;
+  }
+  if (sysctl >= 0) close(sysctl);
+  if (!rc && run_hooks) {
+    rc = run_lifecycle_as_ksu(ksud_path, r);
+    rp(r, "lifecycle: status=%s\n", rc == 0 ? "complete" : "failed");
+  }
+  return rc;
+}
+
 static int load_module(void *kbuf, size_t ksize, const char *ko_path,
                         const char *ksud_path, int run_hooks,
                         const struct chiroru_profile *prof, uint64_t stext_hint,
                         struct rpt *r) {
   if (run_hooks == -1) return load_adb_module(kbuf, ksize, ko_path, ksud_path, prof, r);
+  if (prof->direct_ksu) return load_factory_ksu(kbuf, ksize, ksud_path, run_hooks, prof, stext_hint, r);
   uint64_t phys = 0;
   char params[128];
 
@@ -767,7 +860,7 @@ static int load_module(void *kbuf, size_t ksize, const char *ko_path,
         return 0;
       }
       if (rc == 0 && run_hooks) {
-        rc = run_lifecycle_as_ksu(r);
+        rc = run_lifecycle_as_ksu(NULL, r);
         rp(r, "lifecycle: status=%s\n", rc == 0 ? "complete" : "failed");
       } else if (rc == 0) {
         rp(r, "lifecycle hooks explicitly skipped\n");

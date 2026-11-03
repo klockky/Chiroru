@@ -13,6 +13,9 @@ upstream licenses or relicense GPL-derived code.
 | `app/Chiroru/app/src/main/cpp/` | Native components include GPL-2.0-only console code and GPL-2.0 Arm Mali headers; the root MIT grant does not relicense this native subtree |
 | Generated policy adapters and policy-derived code in `tools/` | Retain the applicable Linux/KernelSU GPL licenses; generated output carries source notices |
 | Bundled `ksud-3.4.2` | KernelSU-Next userspace, GPL-3.0; see `LICENSES/KernelSU-Next-GPL-3.0.txt` and upstream source at https://github.com/KernelSU-Next/KernelSU-Next |
+| Factory `ksud`, manager and `tools/factory/userspace.patch` | KernelSU-Next userspace, GPL-3.0; pinned upstream source and modifications are documented in `tools/factory/README.md` |
+| `tools/factory/kernel.patch` and factory `kernelsu.ko` | GPL-2.0; derived from `build-txn/`, whose notices remain applicable |
+| BusyBox embedded in factory `ksud` | GPL-2.0; the unmodified static AArch64 asset from the pinned KernelSU-Next source; https://github.com/KernelSU-Next/KernelSU-Next and https://github.com/topjohnwu/BusyBox |
 | Gradle Wrapper | Apache-2.0; notices in wrapper scripts and JAR retained |
 | AndroidX, Kotlin and other downloaded dependencies | Their respective upstream licenses; resolved by Gradle |
 

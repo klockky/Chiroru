@@ -54,14 +54,14 @@ class FirmwareTest {
         assertEquals("chiron-5000001307", FirmwareEnvironment.parseCatalog(catalogText).select(identity).profile?.id)
     }
 
-    @Test fun factoryProfileIsSelectedByExactIdentityAndOffersAdbWithoutKernelSu() {
+    @Test fun factoryProfileIsSelectedByExactIdentityAndOffersAdbAndKernelSu() {
         val identity = FirmwareIdentity("chiron", "YNDX-00055",
             "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1982735225:user/dev-keys", "1982735225", 30,
             "5.4.125-android11-2-g85fe5498964f-ab1982735225", "armv8l", 4096)
         val selection = FirmwareEnvironment.parseCatalog(catalogText).select(identity)
         assertEquals("chiron-1982735225", selection.profile?.id)
-        assertEquals(FirmwareSupport.ROOT_ONLY, selection.support)
-        assertNull(selection.profile?.kernelSu)
+        assertEquals(FirmwareSupport.ROOT_AND_KERNEL_SU, selection.support)
+        assertEquals("chiron-1982735225", selection.profile?.kernelSu?.backend)
         assertEquals("chiron-1982735225-adb", selection.profile?.adbRoot?.backend)
     }
 

@@ -1,0 +1,654 @@
+--- a/core/init.c
++++ b/core/init.c
+@@ -95,6 +95,13 @@
+ int __init kernelsu_init(void)
+ {
+ 	int ret;
++#ifdef KSU_FACTORY_COMPAT
++	extern bool ksu_factory_manager_validate(void);
++	if (!ksu_factory_manager_validate()) {
++		pr_err("factory manager certificate/package validation failed\n");
++		return -EKEYREJECTED;
++	}
++#endif
+ #ifdef MODULE
+ 	ksu_late_loaded = (current->pid != 1);
+ #else
+--- a/feature/sucompat.c
++++ b/feature/sucompat.c
+@@ -72,6 +72,13 @@
+ 
+ 	if (!stack)
+ 		return 0;
++#ifdef CONFIG_COMPAT
++	if (test_thread_flag(TIF_32BIT)) {
++		/* An AArch32 task keeps its stack pointer in regs[13] of the
++		 * same 320-byte pt_regs, not in the 64-bit sp member. */
++		return *(u32 *)(stack + 16168);
++	}
++#endif
+ 	return *(unsigned long *)(stack + 16312);
+ }
+ 
+@@ -172,7 +179,7 @@
+ 	unsigned long addr;
+ 
+ 	if (execveat && ((int)PT_REGS_PARM1(regs) != AT_FDCWD ||
+-			 (int)PT_REGS_SYSCALL_PARM4(regs) != 0))
++			 (int)PT_REGS_PARM5(regs) != 0))
+ 		goto do_orig_execve;
+ 
+ 	if (unlikely(!filename_user))
+--- a/hook/setuid_hook.c
++++ b/hook/setuid_hook.c
+@@ -22,7 +22,7 @@
+ #include "feature/kernel_umount.h"
+ #include "compat/kernel_compat.h"
+ 
+-extern void disable_seccomp(struct task_struct *tsk);
++extern void disable_seccomp(void);
+ 
+ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+ {
+@@ -37,7 +37,7 @@
+             ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+         }
+ #else
+-		disable_seccomp(current);
++		disable_seccomp();
+ #endif
+ 
+ #ifdef KSU_KPROBES_HOOK
+@@ -55,7 +55,7 @@
+             ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+         }
+ #else
+-		disable_seccomp(current);
++		disable_seccomp();
+ #endif
+ 
+ #ifdef KSU_KPROBES_HOOK
+@@ -82,4 +82,4 @@
+ {
+ 	pr_info("ksu_core_exit\n");
+ 	ksu_kernel_umount_exit();
+-}
+\ No newline at end of file
++}
+--- a/hook/syscall_table_hook.c
++++ b/hook/syscall_table_hook.c
+@@ -46,12 +46,28 @@
+  * kallsyms, so it is patched into the module as an absolute symbol. */
+ extern ksu_syscall_fn_t ksu_sth_table[] __asm__("sys_call_table");
+ 
++/* 32-bit tasks use the ARM EABI table, which is separate from sys_call_table. */
++#ifdef CONFIG_COMPAT
++extern ksu_syscall_fn_t ksu_sth_compat_table[] __asm__("compat_sys_call_table");
++
++/* ARM EABI syscall numbers (arch/arm/tools/syscall.tbl). */
++#define KSU_COMPAT_NR_EXECVE 11
++#define KSU_COMPAT_NR_REBOOT 88
++#define KSU_COMPAT_NR_SETRESUID32 208
++#define KSU_COMPAT_NR_FSTATAT64 327
++#define KSU_COMPAT_NR_FACCESSAT 334
++#define KSU_COMPAT_NR_EXECVEAT 387
++
++static ksu_syscall_fn_t *ksu_sth_compat_syscall_table = NULL;
++#endif
++
+ static ksu_syscall_fn_t *ksu_sth_syscall_table = NULL;
+ 
+ #define KSU_STH_MAX_HOOKS 16
+ 
+ struct ksu_sth_entry {
+ 	int nr;
++	ksu_syscall_fn_t *table;
+ 	ksu_syscall_fn_t orig;
+ 	ksu_syscall_fn_t wrapper;
+ };
+@@ -65,11 +81,16 @@
+ #define untagged_addr(addr) (addr)
+ #endif
+ 
+-static ksu_syscall_fn_t ksu_sth_get_orig(int nr)
++static ksu_syscall_fn_t ksu_sth_get_orig(int nr, const struct pt_regs *regs)
+ {
+ 	int i;
++	ksu_syscall_fn_t *table = ksu_sth_syscall_table;
++#ifdef CONFIG_COMPAT
++	if (compat_user_mode(regs))
++		table = ksu_sth_compat_syscall_table;
++#endif
+ 	for (i = 0; i < ksu_sth_count; i++) {
+-		if (ksu_sth_entries[i].nr == nr)
++		if (ksu_sth_entries[i].nr == nr && ksu_sth_entries[i].table == table)
+ 			return ksu_sth_entries[i].orig;
+ 	}
+ 	return NULL;
+@@ -77,22 +98,21 @@
+ 
+ static inline long ksu_sth_call_orig(int nr, const struct pt_regs *regs)
+ {
+-	ksu_syscall_fn_t orig = ksu_sth_get_orig(nr);
++	ksu_syscall_fn_t orig = ksu_sth_get_orig(nr, regs);
+ 	if (unlikely(!orig))
+ 		return -ENOSYS;
+ 	return orig(regs);
+ }
+ 
+-static int ksu_sth_patch(int nr, ksu_syscall_fn_t fn)
+-{
+-	if (!ksu_sth_syscall_table)
++static int ksu_sth_patch(ksu_syscall_fn_t *table, int nr, ksu_syscall_fn_t fn)
++{
++	if (!table)
+ 		return -ENOENT;
+ 
+ 	pr_info("sth: patch syscall %d: 0x%lx -> 0x%lx\n", nr,
+-		(unsigned long)READ_ONCE(ksu_sth_syscall_table[nr]),
+-		(unsigned long)fn);
+-
+-	if (ksu_patch_text(&ksu_sth_syscall_table[nr], &fn, sizeof(fn),
++		(unsigned long)READ_ONCE(table[nr]), (unsigned long)fn);
++
++	if (ksu_patch_text(&table[nr], &fn, sizeof(fn),
+ 			   KSU_PATCH_TEXT_FLUSH_DCACHE)) {
+ 		pr_err("sth: patch syscall %d failed\n", nr);
+ 		return -EIO;
+@@ -100,11 +120,13 @@
+ 	return 0;
+ }
+ 
+-static void ksu_sth_record(int nr, ksu_syscall_fn_t orig)
++static void ksu_sth_record(ksu_syscall_fn_t *table, int nr,
++			   ksu_syscall_fn_t orig)
+ {
+ 	int i;
+ 	for (i = 0; i < ksu_sth_count; i++) {
+-		if (ksu_sth_entries[i].nr == nr)
++		if (ksu_sth_entries[i].nr == nr &&
++		    ksu_sth_entries[i].table == table)
+ 			return;
+ 	}
+ 	if (ksu_sth_count >= KSU_STH_MAX_HOOKS) {
+@@ -112,6 +134,7 @@
+ 		return;
+ 	}
+ 	ksu_sth_entries[ksu_sth_count].nr = nr;
++	ksu_sth_entries[ksu_sth_count].table = table;
+ 	ksu_sth_entries[ksu_sth_count].orig = orig;
+ 	ksu_sth_entries[ksu_sth_count].wrapper = NULL;
+ 	ksu_sth_count++;
+@@ -148,7 +171,7 @@
+ }
+ 
+ #ifdef __NR_execve
+-static long ksu_sth_execve(const struct pt_regs *regs)
++static long ksu_sth_execve_common(const struct pt_regs *regs, int nr)
+ {
+ 	const char __user **filename_user =
+ 		(const char __user **)&PT_REGS_PARM1(regs);
+@@ -156,7 +179,7 @@
+ 
+ 	/* Never touch init: it must not receive KSU filename rewrites. */
+ 	if (unlikely(current->pid == 1))
+-		return ksu_sth_call_orig(__NR_execve, regs);
++		return ksu_sth_call_orig(nr, regs);
+ 
+ 	if (current->pid != 1 && is_init(current_cred())) {
+ 		ksu_sth_init_exec_tracker(*filename_user);
+@@ -164,15 +187,20 @@
+ 		if (adb_ret)
+ 			pr_err("sth: adb root failed: %ld\n", adb_ret);
+ 	} else {
+-		ksu_handle_execve_sucompat(filename_user, __NR_execve, regs);
+-	}
+-
+-	return ksu_sth_call_orig(__NR_execve, regs);
++		ksu_handle_execve_sucompat(filename_user, nr, regs);
++	}
++
++	return ksu_sth_call_orig(nr, regs);
++}
++
++static long ksu_sth_execve(const struct pt_regs *regs)
++{
++	return ksu_sth_execve_common(regs, __NR_execve);
+ }
+ #endif
+ 
+ #ifdef __NR_execveat
+-static long ksu_sth_execveat(const struct pt_regs *regs)
++static long ksu_sth_execveat_common(const struct pt_regs *regs, int nr)
+ {
+ 	const char __user **filename_user =
+ 		(const char __user **)&PT_REGS_PARM2(regs);
+@@ -180,10 +208,10 @@
+ 
+ 	// New bionic maps execve to execveat(AT_FDCWD, path, argv, envp, 0)
+ 	if (unlikely(current->pid == 1))
+-		return ksu_sth_call_orig(__NR_execveat, regs);
++		return ksu_sth_call_orig(nr, regs);
+ 
+ 	if ((int)PT_REGS_PARM1(regs) == AT_FDCWD &&
+-	    (int)PT_REGS_SYSCALL_PARM4(regs) == 0) {
++	    (int)PT_REGS_PARM5(regs) == 0) {
+ 		if (current->pid != 1 && is_init(current_cred())) {
+ 			ksu_sth_init_exec_tracker(*filename_user);
+ 			adb_ret = ksu_adb_root_handle_execveat(
+@@ -191,35 +219,45 @@
+ 			if (adb_ret)
+ 				pr_err("sth: adb root failed: %ld\n", adb_ret);
+ 		} else {
+-			ksu_handle_execveat_sucompat_user(filename_user,
+-							  __NR_execveat, regs);
++			ksu_handle_execveat_sucompat_user(filename_user, nr,
++							  regs);
+ 		}
+ 	}
+ 
+-	return ksu_sth_call_orig(__NR_execveat, regs);
++	return ksu_sth_call_orig(nr, regs);
++}
++
++static long ksu_sth_execveat(const struct pt_regs *regs)
++{
++	return ksu_sth_execveat_common(regs, __NR_execveat);
+ }
+ #endif
+ 
+ #ifdef __NR_setresuid
+-static long ksu_sth_setresuid(const struct pt_regs *regs)
++static long ksu_sth_setresuid_common(const struct pt_regs *regs, int nr)
+ {
+ 	uid_t ruid = (uid_t)PT_REGS_PARM1(regs);
+ 	uid_t euid = (uid_t)PT_REGS_PARM2(regs);
+ 	uid_t suid = (uid_t)PT_REGS_PARM3(regs);
+ 
+ 	if (unlikely(current->pid == 1))
+-		return ksu_sth_call_orig(__NR_setresuid, regs);
++		return ksu_sth_call_orig(nr, regs);
+ 
+ 	(void)euid;
+ 	(void)suid;
+ 	ksu_handle_setresuid(current_uid().val, ruid);
+ 
+-	return ksu_sth_call_orig(__NR_setresuid, regs);
++	return ksu_sth_call_orig(nr, regs);
++}
++
++static long ksu_sth_setresuid(const struct pt_regs *regs)
++{
++	return ksu_sth_setresuid_common(regs, __NR_setresuid);
+ }
+ #endif
+ 
+ #ifdef __NR_reboot
+-static long ksu_sth_reboot(const struct pt_regs *regs)
++static long ksu_sth_reboot_common(const struct pt_regs *regs, int nr)
+ {
+ 	int magic1 = (int)PT_REGS_PARM1(regs);
+ 	int magic2 = (int)PT_REGS_PARM2(regs);
+@@ -227,15 +265,20 @@
+ 	unsigned long arg4 = (unsigned long)PT_REGS_SYSCALL_PARM4(regs);
+ 
+ 	if (unlikely(current->pid == 1))
+-		return ksu_sth_call_orig(__NR_reboot, regs);
++		return ksu_sth_call_orig(nr, regs);
+ 
+ 	ksu_handle_sys_reboot(magic1, magic2, cmd, (void __user **)&arg4);
+-	return ksu_sth_call_orig(__NR_reboot, regs);
++	return ksu_sth_call_orig(nr, regs);
++}
++
++static long ksu_sth_reboot(const struct pt_regs *regs)
++{
++	return ksu_sth_reboot_common(regs, __NR_reboot);
+ }
+ #endif
+ 
+ #ifdef __NR_faccessat
+-static long ksu_sth_faccessat(const struct pt_regs *regs)
++static long ksu_sth_faccessat_common(const struct pt_regs *regs, int nr)
+ {
+ 	int *dfd = (int *)&PT_REGS_PARM1(regs);
+ 	const char __user **filename_user =
+@@ -243,16 +286,21 @@
+ 	int *mode = (int *)&PT_REGS_PARM3(regs);
+ 
+ 	if (unlikely(current->pid == 1))
+-		return ksu_sth_call_orig(__NR_faccessat, regs);
++		return ksu_sth_call_orig(nr, regs);
+ 
+ 	ksu_handle_faccessat(dfd, filename_user, mode, NULL);
+ 
+-	return ksu_sth_call_orig(__NR_faccessat, regs);
++	return ksu_sth_call_orig(nr, regs);
++}
++
++static long ksu_sth_faccessat(const struct pt_regs *regs)
++{
++	return ksu_sth_faccessat_common(regs, __NR_faccessat);
+ }
+ #endif
+ 
+ #ifdef __NR_newfstatat
+-static long ksu_sth_newfstatat(const struct pt_regs *regs)
++static long ksu_sth_newfstatat_common(const struct pt_regs *regs, int nr)
+ {
+ 	int *dfd = (int *)&PT_REGS_PARM1(regs);
+ 	const char __user **filename_user =
+@@ -260,66 +308,141 @@
+ 	int *flags = (int *)&PT_REGS_SYSCALL_PARM4(regs);
+ 
+ 	if (unlikely(current->pid == 1))
+-		return ksu_sth_call_orig(__NR_newfstatat, regs);
++		return ksu_sth_call_orig(nr, regs);
+ 
+ 	ksu_handle_stat(dfd, filename_user, flags);
+ 
+-	return ksu_sth_call_orig(__NR_newfstatat, regs);
+-}
+-#endif
+-
+-void __init ksu_syscall_table_hook_init(void)
+-{
+-	struct {
+-		int nr;
+-		ksu_syscall_fn_t wrapper;
+-	} hooks[] = {
+-#ifdef __NR_execve
+-		{ __NR_execve, ksu_sth_execve },
+-#endif
+-#ifdef __NR_execveat
+-		{ __NR_execveat, ksu_sth_execveat },
+-#endif
+-#ifdef __NR_faccessat
+-		{ __NR_faccessat, ksu_sth_faccessat },
+-#endif
+-#ifdef __NR_newfstatat
+-		{ __NR_newfstatat, ksu_sth_newfstatat },
+-#endif
+-#ifdef __NR_setresuid
+-		{ __NR_setresuid, ksu_sth_setresuid },
+-#endif
+-#ifdef __NR_reboot
+-		{ __NR_reboot, ksu_sth_reboot },
+-#endif
+-	};
++	return ksu_sth_call_orig(nr, regs);
++}
++
++static long ksu_sth_newfstatat(const struct pt_regs *regs)
++{
++	return ksu_sth_newfstatat_common(regs, __NR_newfstatat);
++}
++#endif
++
++#ifdef CONFIG_COMPAT
++static long ksu_sth_compat_execve(const struct pt_regs *regs)
++{
++	return ksu_sth_execve_common(regs, KSU_COMPAT_NR_EXECVE);
++}
++
++static long ksu_sth_compat_execveat(const struct pt_regs *regs)
++{
++	return ksu_sth_execveat_common(regs, KSU_COMPAT_NR_EXECVEAT);
++}
++
++static long ksu_sth_compat_setresuid(const struct pt_regs *regs)
++{
++	return ksu_sth_setresuid_common(regs, KSU_COMPAT_NR_SETRESUID32);
++}
++
++static long ksu_sth_compat_reboot(const struct pt_regs *regs)
++{
++	return ksu_sth_reboot_common(regs, KSU_COMPAT_NR_REBOOT);
++}
++
++static long ksu_sth_compat_faccessat(const struct pt_regs *regs)
++{
++	return ksu_sth_faccessat_common(regs, KSU_COMPAT_NR_FACCESSAT);
++}
++
++static long ksu_sth_compat_newfstatat(const struct pt_regs *regs)
++{
++	return ksu_sth_newfstatat_common(regs, KSU_COMPAT_NR_FSTATAT64);
++}
++#endif
++
++struct ksu_sth_hook {
++	int nr;
++	ksu_syscall_fn_t wrapper;
++};
++
++static int ksu_sth_apply(ksu_syscall_fn_t *table,
++			 const struct ksu_sth_hook *hooks, int count)
++{
+ 	int i, patched = 0;
+ 
+-	ksu_init_symbol_resolver();
+-
+-	ksu_sth_syscall_table = ksu_sth_table;
+-	pr_info("sth: sys_call_table=0x%lx\n",
+-		(unsigned long)ksu_sth_syscall_table);
+-
+-	if (!ksu_sth_syscall_table) {
+-		pr_err("sth: sys_call_table not found, table hook disabled\n");
+-		return;
+-	}
+-
+-	mutex_lock(&ksu_sth_lock);
+-
+-	for (i = 0; i < ARRAY_SIZE(hooks); i++) {
+-		ksu_syscall_fn_t orig =
+-			READ_ONCE(ksu_sth_syscall_table[hooks[i].nr]);
++	for (i = 0; i < count; i++) {
++		ksu_syscall_fn_t orig = READ_ONCE(table[hooks[i].nr]);
+ 		if (!orig) {
+ 			pr_warn("sth: syscall %d has no original, skip\n",
+ 				hooks[i].nr);
+ 			continue;
+ 		}
+-		ksu_sth_record(hooks[i].nr, orig);
+-		if (!ksu_sth_patch(hooks[i].nr, hooks[i].wrapper))
++		ksu_sth_record(table, hooks[i].nr, orig);
++		if (!ksu_sth_patch(table, hooks[i].nr, hooks[i].wrapper))
+ 			patched++;
+ 	}
++	return patched;
++}
++
++void __init ksu_syscall_table_hook_init(void)
++{
++	static const struct ksu_sth_hook hooks[] = {
++#ifdef __NR_execve
++		{ __NR_execve, ksu_sth_execve },
++#endif
++#ifdef __NR_execveat
++		{ __NR_execveat, ksu_sth_execveat },
++#endif
++#ifdef __NR_faccessat
++		{ __NR_faccessat, ksu_sth_faccessat },
++#endif
++#ifdef __NR_newfstatat
++		{ __NR_newfstatat, ksu_sth_newfstatat },
++#endif
++#ifdef __NR_setresuid
++		{ __NR_setresuid, ksu_sth_setresuid },
++#endif
++#ifdef __NR_reboot
++		{ __NR_reboot, ksu_sth_reboot },
++#endif
++	};
++#ifdef CONFIG_COMPAT
++	static const struct ksu_sth_hook compat_hooks[] = {
++		{ KSU_COMPAT_NR_EXECVE, ksu_sth_compat_execve },
++		{ KSU_COMPAT_NR_EXECVEAT, ksu_sth_compat_execveat },
++		{ KSU_COMPAT_NR_FACCESSAT, ksu_sth_compat_faccessat },
++		{ KSU_COMPAT_NR_FSTATAT64, ksu_sth_compat_newfstatat },
++		{ KSU_COMPAT_NR_SETRESUID32, ksu_sth_compat_setresuid },
++		{ KSU_COMPAT_NR_REBOOT, ksu_sth_compat_reboot },
++	};
++#endif
++	int patched = 0;
++
++	ksu_init_symbol_resolver();
++
++	ksu_sth_syscall_table = ksu_sth_table;
++	pr_info("sth: sys_call_table=0x%lx\n",
++		(unsigned long)ksu_sth_syscall_table);
++#ifdef CONFIG_COMPAT
++	ksu_sth_compat_syscall_table = ksu_sth_compat_table;
++	pr_info("sth: compat_sys_call_table=0x%lx\n",
++		(unsigned long)ksu_sth_compat_syscall_table);
++#endif
++
++	if (!ksu_sth_syscall_table) {
++		pr_err("sth: sys_call_table not found, native table hook disabled\n");
++	}
++
++	mutex_lock(&ksu_sth_lock);
++
++	if (ksu_sth_syscall_table)
++		patched += ksu_sth_apply(ksu_sth_syscall_table, hooks,
++					 ARRAY_SIZE(hooks));
++
++#ifdef CONFIG_COMPAT
++	if (ksu_sth_compat_syscall_table) {
++		int cpatched = ksu_sth_apply(ksu_sth_compat_syscall_table,
++					     compat_hooks,
++					     ARRAY_SIZE(compat_hooks));
++		pr_info("sth: compat %d/%ld syscalls hooked\n", cpatched,
++			(long)ARRAY_SIZE(compat_hooks));
++	} else {
++		pr_warn("sth: compat_sys_call_table not found, 32-bit hook disabled\n");
++	}
++#endif
+ 
+ 	mutex_unlock(&ksu_sth_lock);
+ 
+@@ -331,20 +454,20 @@
+ {
+ 	int i;
+ 
+-	if (!ksu_sth_syscall_table)
++	if (!ksu_sth_count)
+ 		return;
+ 
+ 	mutex_lock(&ksu_sth_lock);
+ 
+ 	for (i = 0; i < ksu_sth_count; i++) {
+ 		int nr = ksu_sth_entries[i].nr;
++		ksu_syscall_fn_t *table = ksu_sth_entries[i].table;
+ 		ksu_syscall_fn_t orig = ksu_sth_entries[i].orig;
+ 
+ 		pr_info("sth: restore syscall %d to 0x%lx\n", nr,
+ 			(unsigned long)orig);
+-		if (ksu_patch_text(&ksu_sth_syscall_table[nr], &orig,
+-				   sizeof(orig),
+-				   KSU_PATCH_TEXT_FLUSH_DCACHE))
++		if (table && ksu_patch_text(&table[nr], &orig, sizeof(orig),
++					    KSU_PATCH_TEXT_FLUSH_DCACHE))
+ 			pr_err("sth: restore syscall %d failed\n", nr);
+ 	}
+ 	ksu_sth_count = 0;
+--- a/manager/apk_sign.c
++++ b/manager/apk_sign.c
+@@ -15,6 +15,10 @@
+ #else
+ #include <crypto/sha.h>
+ #endif
++#ifdef KSU_FACTORY_COMPAT
++/* One-shot SHA-256 is present in the vendor image, but not these headers. */
++extern void sha256(const u8 *data, unsigned int len, u8 *out);
++#endif
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+ #include <linux/hex.h>
+ #endif
+@@ -61,6 +65,12 @@
+ static int ksu_sha256(const unsigned char *data, unsigned int datalen,
+                       unsigned char *digest)
+ {
++#ifdef KSU_FACTORY_COMPAT
++	/* Use the exported one-shot function: crypto_shash's private layout
++	 * differs in the vendor kernel from our prepared module headers. */
++	sha256(data, datalen, digest);
++	return 0;
++#else
+ 	struct crypto_shash *alg;
+ 	char *hash_alg_name = "sha256";
+ 	int ret;
+@@ -73,6 +83,7 @@
+ 	ret = calc_hash(alg, data, datalen, digest);
+ 	crypto_free_shash(alg);
+ 	return ret;
++#endif
+ }
+ 
+ static bool read_exact(struct file *fp, void *buffer, size_t size, loff_t *pos, loff_t end)
+--- a/manager/throne_tracker.c
++++ b/manager/throne_tracker.c
+@@ -8,6 +8,7 @@
+ #include <linux/string.h>
+ #include <linux/types.h>
+ #include <linux/version.h>
++#include <linux/moduleparam.h>
+ 
+ #include "policy/allowlist.h"
+ #include "manager/apk_sign.h"
+@@ -15,7 +16,20 @@
+ #include "manager/manager_identity.h"
+ #include "manager/throne_tracker.h"
+ 
++#ifdef KSU_FACTORY_COMPAT
++uid_t ksu_manager_appid = KSU_INVALID_APPID;
++static char *factory_manager_apk;
++module_param_named(manager_apk, factory_manager_apk, charp, 0);
++
++bool ksu_factory_manager_validate(void)
++{
++	return factory_manager_apk &&
++	       !strncmp(factory_manager_apk, "/data/app/", 10) &&
++	       is_manager_apk(factory_manager_apk);
++}
++#else
+ uid_t ksu_manager_appid = 10058; /* com.rifsxd.ksunext */
++#endif
+ 
+ #define SYSTEM_PACKAGES_LIST_PATH "/data/system/packages.list"
+ 
+@@ -262,7 +276,9 @@
+ 
+ void track_throne(bool prune_only)
+ {
++#ifndef KSU_FACTORY_COMPAT
+ 	return; /* vendor manager seed */
++#endif
+ 	const struct cred *old_cred = override_creds(ksu_cred);
+ 	struct file *fp = filp_open(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+ 	if (IS_ERR(fp)) {
+@@ -327,6 +343,16 @@
+ 
+ 	if (prune_only)
+ 		goto prune;
++
++#ifdef KSU_FACTORY_COMPAT
++	/* The root loader supplies the installed APK path. Authenticate its
++	 * certificate and resolve its UID from Android's package database;
++	 * never carry a device-specific manager UID into a factory build. */
++	ksu_invalidate_manager_uid();
++	if (ksu_factory_manager_validate())
++		crown_manager(factory_manager_apk, &uid_list);
++	goto prune;
++#endif
+ 
+ 	// first, check if manager_uid exist!
+ 	bool manager_exist = false;
+@@ -374,4 +400,4 @@
+ void __exit ksu_throne_tracker_exit()
+ {
+ 	// nothing to do
+-}
+\ No newline at end of file
++}

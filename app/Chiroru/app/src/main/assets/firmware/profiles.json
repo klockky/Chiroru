@@ -74,6 +74,17 @@
           "asset": "firmware/chiron-1982735225/chiroru-su",
           "sha256": "fbde93588765d2970056cb381ef28b61e6c12f013ef41e8c0308b00b458a1e85"
         }
+      },
+      "kernelSu": {
+        "backend": "chiron-1982735225",
+        "module": {
+          "asset": "firmware/chiron-1982735225/kernelsu.ko",
+          "sha256": "22b22c88e1cd5e1832ddd72f9b585052b3703622aaff321e3840e35dce844c92"
+        },
+        "ksud": {
+          "asset": "firmware/chiron-1982735225/ksud",
+          "sha256": "c36cdef75035720071b2a877998f36c52652685dc7d71d6b7a7517b129f1ed06"
+        }
       }
     }
   ]
