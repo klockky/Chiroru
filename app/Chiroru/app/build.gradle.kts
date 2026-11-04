@@ -17,8 +17,8 @@ android {
         // Preserve the original loader's Android 11 behavior during this migration.
         // Raising this requires a separate review of foreground-service/boot rules.
         targetSdk = 30
-        versionCode = 39
-        versionName = "0.7.5"
+        versionCode = 41
+        versionName = "0.7.6"
         // The factory 1982735225 build ships a 32-bit-only userspace.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=none" } }

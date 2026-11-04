@@ -76,8 +76,8 @@ out:
 int main(void) {
     const struct chiroru_profile *all[] = { &profile_5000001307,
         &profile_1982735225, &profile_5000001245, &profile_5000001248,
-        &profile_5000001289 };
-    for (int i = 0; i < 5; ++i) { int rc = run(all[i]); if (rc) return rc; }
+        &profile_5000001289, &profile_5000001321 };
+    for (unsigned i = 0; i < sizeof all / sizeof all[0]; ++i) { int rc = run(all[i]); if (rc) return rc; }
     return 0;
 }
 '''
@@ -134,17 +134,18 @@ static long fake_sysconf(int key) { (void)key; return page_size; }
 #define sysconf fake_sysconf
 ''' + profiles + patcher + gate + r'''
 int main(int argc, char **argv) {
-    assert(argc == 6);
     struct rpt report;
     const struct chiroru_profile *all[] = { &profile_5000001307, &profile_1982735225, &profile_5000001245, &profile_5000001248,
-        &profile_5000001289 };
-    for (int i = 0; i < 5; ++i) {
+        &profile_5000001289, &profile_5000001321 };
+    const unsigned count = sizeof all / sizeof all[0];
+    assert(argc == count + 1);
+    for (unsigned i = 0; i < count; ++i) {
         const struct chiroru_profile *prof = all[i];
         fp = prof->fingerprint; inc = prof->incremental;
         release = prof->kernel_release; machine = prof->machine;
         sdk = "30"; page_size = 4096; bad_uname = 0;
         assert(profile_gate(prof, &report) == 0);
-        for (int j = 0; j < 5; ++j) if (j != i) assert(profile_gate(all[j], &report) != 0);
+        for (unsigned j = 0; j < count; ++j) if (j != i) assert(profile_gate(all[j], &report) != 0);
         const char **fields[] = { &fp, &inc, &release, &machine, &sdk };
         for (int j = 0; j < 5; ++j) {
             const char *saved = *fields[j]; *fields[j] = "different";
@@ -168,7 +169,7 @@ int main(int argc, char **argv) {
             source.write_text(program)
             subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
             subprocess.run([str(binary), *(str(APP / f"src/main/assets/firmware/chiron-{build}/chiroru_adb.ko")
-                                          for build in ("5000001307", "1982735225", "5000001245", "5000001248", "5000001289"))], check=True, timeout=10)
+                                          for build in ("5000001307", "1982735225", "5000001245", "5000001248", "5000001289", "5000001321"))], check=True, timeout=10)
 
 
 if __name__ == "__main__":
