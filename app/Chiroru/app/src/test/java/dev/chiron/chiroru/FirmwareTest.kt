@@ -168,6 +168,22 @@ class FirmwareTest {
         }
     }
 
+    @Test fun ota1346RequiresExactIdentityAndDedicatedModules() {
+        val catalog = FirmwareEnvironment.parseCatalog(catalogText)
+        val candidate = catalog.profiles.single { it.id == "chiron-5000001346" }
+        assertEquals(candidate, catalog.select(candidate.identity).profile)
+        for (previous in catalog.profiles.filter { it.id != candidate.id }) {
+            assertNull(catalog.select(candidate.identity.copy(fingerprint = previous.identity.fingerprint)).profile)
+            assertNull(catalog.select(candidate.identity.copy(incremental = previous.identity.incremental)).profile)
+            assertNull(catalog.select(candidate.identity.copy(kernelRelease = previous.identity.kernelRelease)).profile)
+            assertNotEquals(previous.adbRoot!!.module.sha256, candidate.adbRoot!!.module.sha256)
+            assertNotEquals(previous.kernelSu!!.module.sha256, candidate.kernelSu!!.module.sha256)
+        }
+        for (build in listOf("5000001345", "5000001347")) {
+            assertNull(catalog.select(candidate.identity.copy(incremental = build)).profile)
+        }
+    }
+
     @Test fun factoryManagerIsRequiredBeforeAnyNativeCallOrPayloadRead() {
         val factory = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-1982735225" }
         val backend = FakeBackend()

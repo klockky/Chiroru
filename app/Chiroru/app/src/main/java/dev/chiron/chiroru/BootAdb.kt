@@ -2,11 +2,12 @@ package dev.chiron.chiroru
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
 
-/** Enable Android's ADB transport using a one-time shell-granted permission. */
+/** Keep Android's ADB transport enabled using the package's settings permission. */
 internal object BootAdb {
     const val GRANT_COMMAND = "adb shell pm grant dev.chiron.chiroru android.permission.WRITE_SECURE_SETTINGS"
 
@@ -28,23 +29,38 @@ internal object BootAdb {
                 else "boot_adb: permission unavailable; grant WRITE_SECURE_SETTINGS manually\n"
         } catch (error: Exception) {
             "boot_adb: permission grant failed: $error\n"
+        } finally {
+            syncMonitor(context)
         }
     }
 
-    fun enableIfRequested(context: Context) {
-        if (!AppPreferences(context).adbOnBoot) return
+    fun syncMonitor(context: Context) {
         try {
+            val intent = Intent(context, AdbMonitorService::class.java)
+            if (AppPreferences(context).adbOnBoot && hasPermission(context)) {
+                context.startForegroundService(intent)
+            } else {
+                context.stopService(intent)
+            }
+        } catch (error: Exception) {
+            // A settings/provider failure must not prevent KernelSU boot loading.
+            Log.e(Loader.TAG, "ADB monitor: cannot update service", error)
+        }
+    }
+
+    fun ensureEnabled(context: Context): Boolean {
+        return try {
             check(hasPermission(context)) { "WRITE_SECURE_SETTINGS permission is missing" }
             val resolver = context.contentResolver
             if (Settings.Global.getInt(resolver, Settings.Global.ADB_ENABLED, 0) != 1) {
                 check(Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)) { "ADB setting write failed" }
+                Log.i(Loader.TAG, "ADB monitor: adb_enabled=1")
             }
             check(Settings.Global.getInt(resolver, Settings.Global.ADB_ENABLED, 0) == 1) { "ADB setting was not enabled" }
-            Log.i(Loader.TAG, "Boot ADB: adb_enabled=1")
+            true
         } catch (error: Exception) {
-            // A locked-boot provider/permission failure must not prevent KSU loading.
-            // BOOT_COMPLETED retries independently of LOCKED_BOOT_COMPLETED.
-            Log.e(Loader.TAG, "Boot ADB: cannot enable ADB", error)
+            Log.e(Loader.TAG, "ADB monitor: cannot enable ADB", error)
+            false
         }
     }
 }

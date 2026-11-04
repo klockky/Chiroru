@@ -14,7 +14,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "app/Chiroru/app/src/main/assets/firmware/profiles.json"
-BUILDS = ("5000001307", "5000001245", "1982735225", "5000001248", "5000001289", "5000001321")
+BUILDS = ("5000001307", "5000001245", "1982735225", "5000001248", "5000001289", "5000001321",
+          "5000001346")
 CRC = 0x8395960f
 HEADER_INPUTS = (".config", "include/config/auto.conf",
                  "include/generated/autoconf.h", "include/generated/utsrelease.h",

@@ -177,12 +177,14 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     fun setAdbOnBoot(enabled: Boolean) {
         val granted = BootAdb.hasPermission(getApplication())
         if (!enabled || granted) preferences.adbOnBoot = enabled
+        BootAdb.syncMonitor(getApplication())
         mutableState.update { it.copy(adbOnBoot = preferences.adbOnBoot, adbSettingsPermission = granted) }
     }
 
     fun refreshAdbPermission() {
         mutableState.update { it.copy(adbOnBoot = preferences.adbOnBoot,
             adbSettingsPermission = BootAdb.hasPermission(getApplication())) }
+        BootAdb.syncMonitor(getApplication())
     }
 
     fun setBootDelay(seconds: Int) {

@@ -275,7 +275,7 @@ class ChiroruUiTest {
         val state = mutableStateOf(AppState())
         compose.setContent { ChiroruTheme { ChiroruScaffold(state.value,
             initialTab = 2, setAdbOnBoot = changes::add) } }
-        val toggle = compose.onNode(isToggleable() and hasText("Enable ADB at startup"))
+        val toggle = compose.onNode(isToggleable() and hasText("Keep ADB enabled"))
         toggle.performScrollTo().assertIsNotEnabled()
         compose.runOnIdle { state.value = state.value.copy(adbSettingsPermission = true) }
         toggle.performScrollTo().assertIsEnabled().performClick()

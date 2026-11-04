@@ -16,6 +16,7 @@ import android.util.Log
 import dev.chiron.chiroru.firmware.FirmwareEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -44,6 +45,11 @@ class LoadService : Service() {
         val boot = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
         val bootId = BootSession.currentId()
         val alreadyAttempted = preferences.hasAttemptedBoot(boot, bootId)
+        // BOOT_COMPLETED can arrive while LOCKED_BOOT_COMPLETED's run is still
+        // in flight; by then recordBootAttempt() has marked this boot as
+        // attempted. Stopping here would cancel the coroutine that is about to
+        // persist the report and would abort an otherwise successful load.
+        if (loading) return START_NOT_STICKY
         if (alreadyAttempted && preferences.lastBootId == null && bootId != null) {
             // Upgrade an attempt made by an older Chiroru in this same Android boot.
             preferences.recordBootAttempt(boot, bootId)
@@ -138,7 +144,9 @@ class LoadService : Service() {
                 report.append("Boot loading failed: $error\n")
             } finally {
                 report.append("started ${started / 1000.0}s, finished ${SystemClock.elapsedRealtime() / 1000.0}s uptime\n")
-                runCatching { AppIo.writeBootReport(report.toString()) }
+                // stopSelf()/onDestroy may cancel this scope at any moment;
+                // the final report is the only record of a boot attempt.
+                runCatching { withContext(NonCancellable) { AppIo.writeBootReport(report.toString()) } }
                     .onFailure { Log.e(Loader.TAG, "Cannot save boot report", it) }
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()

@@ -61,7 +61,7 @@ class BootReceiverTest {
         for (action in listOf(Intent.ACTION_LOCKED_BOOT_COMPLETED, Intent.ACTION_BOOT_COMPLETED)) {
             Settings.Global.putInt(application.contentResolver, Settings.Global.ADB_ENABLED, 0)
             BootReceiver().onReceive(application, Intent(action))
-            assertEquals(1, Settings.Global.getInt(application.contentResolver, Settings.Global.ADB_ENABLED))
+            assertEquals(AdbMonitorService::class.java.name, shadowOf(application).nextStartedService.component?.className)
             assertNull(shadowOf(application).nextStartedService)
             assertFalse(AppPreferences(application).bootEnabled)
         }
@@ -80,6 +80,32 @@ class BootReceiverTest {
         assertTrue(preferences.adbOnBoot)
         adbPermission(true)
         BootReceiver().onReceive(application, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertEquals(AdbMonitorService::class.java.name, shadowOf(application).nextStartedService.component?.className)
+        assertEquals(LoadService::class.java.name, shadowOf(application).nextStartedService.component?.className)
+    }
+
+    @Test fun packageUpdateRestartsOnlyTheRequestedAdbMonitor() {
+        adbPermission(true)
+        val preferences = AppPreferences(application)
+        preferences.bootEnabled = true
+        preferences.adbOnBoot = true
+        BootReceiver().onReceive(application, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertEquals(AdbMonitorService::class.java.name, shadowOf(application).nextStartedService.component?.className)
+        assertNull(shadowOf(application).nextStartedService)
+        preferences.adbOnBoot = false
+        BootReceiver().onReceive(application, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertNull(shadowOf(application).nextStartedService)
+    }
+
+    @Test fun turningOffThePreferenceStopsMonitoringWithoutDisconnectingAdb() {
+        adbPermission(true)
+        AppPreferences(application).adbOnBoot = true
+        BootAdb.syncMonitor(application)
+        assertEquals(AdbMonitorService::class.java.name, shadowOf(application).nextStartedService.component?.className)
+        Settings.Global.putInt(application.contentResolver, Settings.Global.ADB_ENABLED, 1)
+        AppPreferences(application).adbOnBoot = false
+        BootAdb.syncMonitor(application)
+        assertEquals(AdbMonitorService::class.java.name, shadowOf(application).nextStoppedService.component?.className)
         assertEquals(1, Settings.Global.getInt(application.contentResolver, Settings.Global.ADB_ENABLED))
     }
 
