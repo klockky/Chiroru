@@ -350,6 +350,34 @@ static const struct chiroru_profile profile_5000001364 = {
     .vendor_count = 4,
     .vendor = vendor_syms_5000001364,
 };
+
+/* 5000001388: exact decrypted OTA offsets. Seven syscall slots locate the
+ * table 24 bytes before 1364's table; instruction references confirm the
+ * other globals and shared task/SELinux layouts. In-app root, ADB root,
+ * KernelSU and autoload are device-verified. */
+static const struct chiroru_vendor_sym vendor_syms_5000001388[] = {
+    {"selinux_state", 0x147CB10ULL},
+    {"selinux_blob_sizes", 0xFE2784ULL},
+    {"sys_call_table", 0xEEE6E8ULL},
+    {"init_mm", 0x12BE860ULL},
+};
+static const struct chiroru_profile profile_5000001388 = {
+    .id = "chiron-5000001388",
+    .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001388:user/dev-keys",
+    .incremental = "5000001388",
+    .kernel_release = "5.4.125-android11-2-g601513d4b115-ab5000001388",
+    .machine = "aarch64",
+    .image_pa = 0x1080000ULL,
+    .image_size = 0x14b7000ULL,
+    .init_task_pa = 0x22f7500ULL,
+    .use_magic_lbase = 0,
+    .memstart_addr_pa = 0x2062310ULL,
+    .vabits_actual_pa = 0x2097F28ULL,
+    .kimage_voffset_pa = 0x2062320ULL,
+    .modules_supported = 1,
+    .vendor_count = 4,
+    .vendor = vendor_syms_5000001388,
+};
 #define WALK_SUB       T_TASKS      /* va -> task_struct                    */
 #define WALK_PREV_OFF  T_TASKS_PREV /* where the walk reads the next va     */
 
@@ -1804,6 +1832,11 @@ int chiron_5000001364_root(const char *ko_path, const char *ksud_path,
   return chiroru_root_with(&profile_5000001364, ko_path, ksud_path, run_hooks, r);
 }
 
+int chiron_5000001388_root(const char *ko_path, const char *ksud_path,
+                           int run_hooks, struct rpt *r) {
+  return chiroru_root_with(&profile_5000001388, ko_path, ksud_path, run_hooks, r);
+}
+
 const char *chiron_1982735225_probe(void) {
   static char out[6144];
   char fp[192] = {0}, inc[96] = {0};
@@ -1951,6 +1984,22 @@ int chiron_5000001364_adb_root(const char *ko, const char *loader, int hooks, st
   if (snprintf(adb_console_params, sizeof adb_console_params,
                "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
   return chiroru_root_with(&profile_5000001364, ko, loader, -1, r);
+}
+
+int chiron_5000001388_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
+  (void)hooks;
+  if (!ko || !loader) { rp(r, "preflight: blocked (ADB module and loader required)\n"); return -1; }
+  char context[160] = {0};
+  int uid = adb_app_identity(r);
+  if (uid < 0) return -1;
+  int fd = open("/proc/self/attr/current", O_RDONLY | O_CLOEXEC);
+  ssize_t n = fd < 0 ? -1 : read(fd, context, sizeof context - 1);
+  if (fd >= 0) close(fd);
+  if (n <= 0) return -1;
+  context[strcspn(context, "\n")] = 0;
+  if (snprintf(adb_console_params, sizeof adb_console_params,
+               "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
+  return chiroru_root_with(&profile_5000001388, ko, loader, -1, r);
 }
 
 int chiron_1982735225_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {

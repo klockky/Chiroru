@@ -300,6 +300,55 @@
       }
     },
     {
+      "id": "chiron-5000001388",
+      "label": "Duo Max · 5000001388",
+      "match": {
+        "device": "chiron",
+        "model": "YNDX-00055",
+        "fingerprint": "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/5000001388:user/dev-keys",
+        "incremental": "5000001388",
+        "sdk": 30,
+        "kernelRelease": "5.4.125-android11-2-g601513d4b115-ab5000001388",
+        "machine": "aarch64",
+        "pageSize": 4096
+      },
+      "root": {
+        "backend": "chiron-5000001388"
+      },
+      "adbRoot": {
+        "backend": "chiron-5000001388-adb",
+        "module": {
+          "asset": "firmware/chiron-5000001388/chiroru_adb.ko",
+          "sha256": "8ccbb309efe0070e1438235848a2aac82e901a8745033a40de8b5aa1505a4e7b"
+        },
+        "loader": {
+          "asset": "common/ksud-3.4.2",
+          "sha256": "7794fb0546955e10b3b61a2771b325d52e47ac1d4702970c9a46e3b1667db042"
+        },
+        "client": {
+          "asset": "common/chiroru-su",
+          "sha256": "826be7cb324157863a418a773607874c5ef80d7537f1eae491f76f952bf57538"
+        }
+      },
+      "kernelSu": {
+        "backend": "chiron-5000001388",
+        "manager": {
+          "source": "OFFICIAL_RELEASE",
+          "packageName": "com.rifsxd.ksunext",
+          "versionCode": 33355,
+          "signerSha256": "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7"
+        },
+        "module": {
+          "asset": "firmware/chiron-5000001388/kernelsu.ko",
+          "sha256": "9d36cc499dcd6b076996cd1044f00c897b9a6c5b8d166433f9b90fc56744406b"
+        },
+        "ksud": {
+          "asset": "common/ksud-3.4.2",
+          "sha256": "7794fb0546955e10b3b61a2771b325d52e47ac1d4702970c9a46e3b1667db042"
+        }
+      }
+    },
+    {
       "id": "chiron-5000001364",
       "label": "Duo Max · 5000001364",
       "match": {

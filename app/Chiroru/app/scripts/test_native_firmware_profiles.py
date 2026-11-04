@@ -76,7 +76,8 @@ out:
 int main(void) {
     const struct chiroru_profile *all[] = { &profile_5000001307,
         &profile_1982735225, &profile_5000001245, &profile_5000001248,
-        &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364 };
+        &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364,
+        &profile_5000001388 };
     for (unsigned i = 0; i < sizeof all / sizeof all[0]; ++i) { int rc = run(all[i]); if (rc) return rc; }
     return 0;
 }
@@ -136,7 +137,8 @@ static long fake_sysconf(int key) { (void)key; return page_size; }
 int main(int argc, char **argv) {
     struct rpt report;
     const struct chiroru_profile *all[] = { &profile_5000001307, &profile_1982735225, &profile_5000001245, &profile_5000001248,
-        &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364 };
+        &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364,
+        &profile_5000001388 };
     const unsigned count = sizeof all / sizeof all[0];
     assert(argc == count + 1);
     for (unsigned i = 0; i < count; ++i) {
@@ -170,7 +172,57 @@ int main(int argc, char **argv) {
             subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
             subprocess.run([str(binary), *(str(APP / f"src/main/assets/firmware/chiron-{build}/chiroru_adb.ko")
                                           for build in ("5000001307", "1982735225", "5000001245", "5000001248", "5000001289", "5000001321",
-                                          "5000001346", "5000001364"))], check=True, timeout=10)
+                                          "5000001346", "5000001364", "5000001388"))], check=True, timeout=10)
+
+    def test_1388_ksu_syscall_symbol_matches_its_decrypted_ota_address(self):
+        profiles = SOURCE[SOURCE.index("struct chiroru_vendor_sym"):SOURCE.index("#define WALK_SUB")]
+        patcher = SOURCE[SOURCE.index("static int patch_vendor_syms("):SOURCE.index("static int patch_module_symbols(")]
+        program = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <elf.h>
+struct rpt { int unused; };
+#define rp(...) ((void)0)
+''' + profiles + patcher + r'''
+int main(int argc, char **argv) {
+    assert(argc == 2);
+    FILE *file = fopen(argv[1], "rb"); assert(file);
+    assert(!fseek(file, 0, SEEK_END)); long size = ftell(file); assert(size > 0); rewind(file);
+    void *data = malloc(size); assert(data);
+    assert(fread(data, 1, size, file) == (size_t)size); fclose(file);
+    struct rpt report;
+    assert(patch_vendor_syms(data, size, 0xffffffc010080800ULL,
+                            &profile_5000001388, 4, &report) == 0);
+    Elf64_Ehdr *eh = data;
+    Elf64_Shdr *sections = (Elf64_Shdr *)((char *)data + eh->e_shoff);
+    int found = 0;
+    for (unsigned i = 0; i < eh->e_shnum; ++i) {
+        if (sections[i].sh_type != SHT_SYMTAB) continue;
+        const char *names = (char *)data + sections[sections[i].sh_link].sh_offset;
+        Elf64_Sym *symbols = (Elf64_Sym *)((char *)data + sections[i].sh_offset);
+        for (unsigned j = 0; j < sections[i].sh_size / sizeof *symbols; ++j) {
+            if (strcmp(names + symbols[j].st_name, "sys_call_table")) continue;
+            assert(symbols[j].st_shndx == SHN_ABS);
+            /* Independent OTA evidence: Image base + 0xEEEEE8, located by
+             * seven named syscall slots. Reusing 1364 would yield +0xEEEF00. */
+            assert(symbols[j].st_value == 0xffffffc010f6eee8ULL);
+            found++;
+        }
+    }
+    assert(found == 1);
+    free(data);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            source, binary = Path(directory) / "ksu.c", Path(directory) / "ksu"
+            source.write_text(program)
+            subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
+            subprocess.run([str(binary), str(APP / "src/main/assets/firmware/chiron-5000001388/kernelsu.ko")],
+                           check=True, timeout=10)
 
 
 if __name__ == "__main__":
