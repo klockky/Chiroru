@@ -46,10 +46,10 @@ KernelSU и ADB-модуль не используются. Сессия раб�
 
 ```sh
 python3 root-console/test_server.py
-python3 tools/policy_host/build.py --out /tmp/opencode/process-console-policy \
+python3 tools/policy_host/build.py --out /tmp/chiroru-process-console-policy \
   --test-source root-console/test_policy.c
-adb pull /odm/etc/selinux/precompiled_sepolicy /tmp/opencode/chiron-stock-policy.bin
-/tmp/opencode/process-console-policy/test-policy /tmp/opencode/chiron-stock-policy.bin
+adb pull /odm/etc/selinux/precompiled_sepolicy /tmp/chiroru-stock-policy.bin
+/tmp/chiroru-process-console-policy/test-policy /tmp/chiroru-stock-policy.bin
 ```
 
 Gradle-задача `:app:testProcessConsole` входит в `check`.

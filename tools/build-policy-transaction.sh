@@ -16,6 +16,6 @@ python3 tools/build-kernel-modules.py "$FIRMWARE" "$HEADERS" "$OUT" --module ksu
 CHIRORU_MODULE_WORK="$(realpath "$OUT/work")" \
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v tools/test_policy_transaction.py
 if [[ -n "$SNAPSHOT" ]]; then
-    PYTHONDONTWRITEBYTECODE=1 python3 tools/policy_host/build.py
-    /tmp/opencode/policy-host/test-policy "$SNAPSHOT"
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/policy_host/build.py --out "$OUT/policy-host"
+    "$OUT/policy-host/test-policy" "$SNAPSHOT"
 fi

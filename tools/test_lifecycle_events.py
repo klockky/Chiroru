@@ -45,7 +45,7 @@ int main(void) {
     return 0;
 }
 '''
-        with tempfile.TemporaryDirectory(prefix="ksu-bootstrap-", dir="/tmp/opencode") as directory:
+        with tempfile.TemporaryDirectory(prefix="ksu-bootstrap-") as directory:
             path = Path(directory)
             (path / "test.c").write_text(program)
             subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra",
@@ -103,7 +103,7 @@ int main(void) {
     return 0;
 }
 '''
-        with tempfile.TemporaryDirectory(prefix="ksu-handoff-", dir="/tmp/opencode") as directory:
+        with tempfile.TemporaryDirectory(prefix="ksu-handoff-") as directory:
             path = Path(directory)
             (path / "test.c").write_text(program)
             subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra",
@@ -183,7 +183,7 @@ int main(void) {
     return 0;
 }
 '''
-        with tempfile.TemporaryDirectory(prefix="ksu-events-", dir="/tmp/opencode") as directory:
+        with tempfile.TemporaryDirectory(prefix="ksu-events-") as directory:
             path = Path(directory)
             (path / "test.c").write_text(program)
             subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra",

@@ -144,7 +144,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001245/kernelsu.ko",
-          "sha256": "743dc9448c4826f86e61aa68d41600dc4b36f2d6312e08dc3ab84076185bb051"
+          "sha256": "58188983aa55028dbb08477b4eb384c395f0ffd39aeea22d7f2d411a47b005e4"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",

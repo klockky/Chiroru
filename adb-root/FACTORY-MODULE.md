@@ -27,14 +27,14 @@ From the repository root:
 
 ```sh
 python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel \
-  /tmp/opencode/factory-adb --module adb
+  /tmp/chiroru-factory-adb --module adb
 ```
 
 To build the module and static ARMv7 client:
 
 ```sh
 ANDROID_NDK_HOME=/path/to/android-ndk \
-  bash adb-root/build.sh 1982735225 /path/to/prepared-kernel /tmp/opencode/factory-adb-client
+  bash adb-root/build.sh 1982735225 /path/to/prepared-kernel /tmp/chiroru-factory-adb-client
 ```
 
 The builder sets `CHIRORU_KERNEL_RELEASE` at compile time and verifies the

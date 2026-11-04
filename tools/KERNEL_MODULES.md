@@ -55,12 +55,12 @@ symbols ожидаемы (`KBUILD_MODPOST_WARN=1`). Смещения струк�
 Из корня репозитория, с новым каталогом результата для каждого запуска:
 
 ```sh
-python3 tools/build-kernel-modules.py 5000001307 /path/to/prepared-kernel /tmp/opencode/modules-1307
-python3 tools/build-kernel-modules.py 5000001245 /path/to/prepared-kernel /tmp/opencode/modules-1245
-python3 tools/build-kernel-modules.py 5000001248 /path/to/prepared-kernel /tmp/opencode/modules-1248
-python3 tools/build-kernel-modules.py 5000001289 /path/to/prepared-kernel /tmp/opencode/modules-1289
-python3 tools/build-kernel-modules.py 5000001321 /path/to/prepared-kernel /tmp/opencode/modules-1321
-python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/opencode/modules-factory
+python3 tools/build-kernel-modules.py 5000001307 /path/to/prepared-kernel /tmp/chiroru-modules-1307
+python3 tools/build-kernel-modules.py 5000001245 /path/to/prepared-kernel /tmp/chiroru-modules-1245
+python3 tools/build-kernel-modules.py 5000001248 /path/to/prepared-kernel /tmp/chiroru-modules-1248
+python3 tools/build-kernel-modules.py 5000001289 /path/to/prepared-kernel /tmp/chiroru-modules-1289
+python3 tools/build-kernel-modules.py 5000001321 /path/to/prepared-kernel /tmp/chiroru-modules-1321
+python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/chiroru-modules-factory
 ```
 
 Для одного модуля добавьте `--module adb` или `--module ksu`.
@@ -82,13 +82,13 @@ factory-профиля. Приватный ключ для сборки моду
 ```sh
 # ADB-модуль и клиент: arm64 PIE или статический armv7 для factory
 ANDROID_NDK_HOME=/path/to/android-ndk \
-  bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/adb-1245
+  bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/chiroru-adb-1245
 
 # KernelSU и проверки; четвёртым аргументом можно передать снимок SELinux policy
-bash tools/build-policy-transaction.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/ksu-1245
+bash tools/build-policy-transaction.sh 5000001245 /path/to/prepared-kernel /tmp/chiroru-ksu-1245
 
 # Factory KernelSU, включая имя kernelsu-factory.ko для совместимости
-bash tools/factory/build-module.sh /path/to/prepared-kernel /tmp/opencode/ksu-factory
+bash tools/factory/build-module.sh /path/to/prepared-kernel /tmp/chiroru-ksu-factory
 ```
 
 Factory-демон и менеджер: [отдельная инструкция](factory/README.md#daemon-and-manager).
@@ -111,7 +111,7 @@ build ID и нормализации диагностических строк.
 
 ```sh
 python3 -m unittest -v tools/test_kernel_module_build.py tools/test_lifecycle_events.py
-CHIRORU_MODULE_WORK=/tmp/opencode/modules-1245/work \
+CHIRORU_MODULE_WORK=/tmp/chiroru-modules-1245/work \
   python3 -m unittest -v tools/test_policy_transaction.py
 ```
 

@@ -76,7 +76,7 @@ def sanitize(source, destination, objcopy):
         if not section[2] & 2 or section[1] == 8:
             continue
         contents = original.contents(section)
-        for match in re.finditer(rb'/(?:home|Users)/[^\0\r\n]+?/build-txn/([^\0\r\n]+)', contents):
+        for match in re.finditer(rb'/(?:home|Users|tmp|var/tmp)/[^\0\r\n]+?/build-txn(?:-[0-9]+)?/([^\0\r\n]+)', contents):
             if not name.startswith('.rodata'):
                 raise ValueError('unexpected personal path outside diagnostic strings')
             replacement = b'/src/build-txn/' + match[1]

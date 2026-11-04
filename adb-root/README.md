@@ -66,12 +66,12 @@ supplementary groups и устанавливает UID/GID 0 и capabilities.
 Из корня репозитория:
 
 ```sh
-bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/opencode/adb-1245
+bash adb-root/build.sh 5000001245 /path/to/prepared-kernel /tmp/chiroru-adb-1245
 python3 adb-root/test_abi.py
-python3 tools/policy_host/build.py --out /tmp/opencode/adb-policy-host \
+python3 tools/policy_host/build.py --out /tmp/chiroru-adb-policy-host \
   --test-source adb-root/test_policy.c
-adb pull /odm/etc/selinux/precompiled_sepolicy /tmp/opencode/chiron-stock-policy.bin
-/tmp/opencode/adb-policy-host/test-policy /tmp/opencode/chiron-stock-policy.bin
+adb pull /odm/etc/selinux/precompiled_sepolicy /tmp/chiroru-stock-policy.bin
+/tmp/chiroru-adb-policy-host/test-policy /tmp/chiroru-stock-policy.bin
 ```
 
 Нужны подготовленное дерево ядра, GCC ARM64 и NDK `28.2.13676358`.

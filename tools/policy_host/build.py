@@ -4,6 +4,7 @@ import argparse
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,7 +14,7 @@ from gen_policy_writer import function
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("/tmp/opencode/policy-host"))
+    parser.add_argument("--out", type=Path, default=Path(tempfile.gettempdir()) / "chiroru-policy-host")
     parser.add_argument("--test-source", type=Path, default=Path(__file__).with_name("test.c"))
     parser.add_argument("--prepare-only", action="store_true", help="Generate userspace compatibility headers without compiling tests")
     args = parser.parse_args()

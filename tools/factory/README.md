@@ -55,7 +55,7 @@ Provide a verified prepared module header tree (see
 then run from the repository root:
 
 ```sh
-bash tools/factory/build-module.sh /path/to/factory-headers /tmp/opencode/factory-module-new
+bash tools/factory/build-module.sh /path/to/factory-headers /tmp/chiroru-factory-module-new
 ```
 
 The script delegates to the shared profile builder: it copies the prepared

@@ -38,7 +38,7 @@ crypto driver; остальные шаги выполняются на ПК. И�
 Принимается полный OTA ZIP с единственным `boot.img` либо отдельный boot image:
 
 ```sh
-python3 tools/ota/aml_boot.py split /path/to/update.zip /tmp/opencode/ota-cipher
+python3 tools/ota/aml_boot.py split /path/to/update.zip /tmp/chiroru-ota-cipher
 ```
 
 Результат: `ciphertext.bin` и `metadata.json`. Размер шифротекста находится в
@@ -52,14 +52,14 @@ python3 tools/ota/aml_boot.py split /path/to/update.zip /tmp/opencode/ota-cipher
 NDK=/path/to/android-ndk
 "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi30-clang" \
   -static -O2 -Wall -Wextra -Werror tools/ota/aml_decrypt.c \
-  -o /tmp/opencode/aml-decrypt
-adb push /tmp/opencode/aml-decrypt /data/local/tmp/chiroru-ota-decrypt
-adb push /tmp/opencode/ota-cipher/ciphertext.bin /data/local/tmp/chiroru-ota.enc
+  -o /tmp/chiroru-aml-decrypt
+adb push /tmp/chiroru-aml-decrypt /data/local/tmp/chiroru-ota-decrypt
+adb push /tmp/chiroru-ota-cipher/ciphertext.bin /data/local/tmp/chiroru-ota.enc
 adb shell chmod 755 /data/local/tmp/chiroru-ota-decrypt
 
 # Пример размера для boot payload 1245/1307; берите его из своего metadata.json.
 adb shell 'su -c "timeout 60 /data/local/tmp/chiroru-ota-decrypt 9392128 < /data/local/tmp/chiroru-ota.enc > /data/local/tmp/chiroru-ota.plain"'
-adb pull /data/local/tmp/chiroru-ota.plain /tmp/opencode/ota-boot.plain
+adb pull /data/local/tmp/chiroru-ota.plain /tmp/chiroru-ota-boot.plain
 ```
 
 При нескольких устройствах укажите `adb -s SERIAL`. В режиме Chiroru ADB root
@@ -73,7 +73,7 @@ adb pull /data/local/tmp/chiroru-ota.plain /tmp/opencode/ota-boot.plain
 
 ```sh
 python3 tools/ota/aml_boot.py unpack /path/to/update.zip \
-  /tmp/opencode/ota-boot.plain /tmp/opencode/ota-kernel
+  /tmp/chiroru-ota-boot.plain /tmp/chiroru-ota-kernel
 ```
 
 Результат: `Image` и `metadata.json` с хешами. Образ в файле может быть короче
@@ -82,12 +82,12 @@ python3 tools/ota/aml_boot.py unpack /path/to/update.zip \
 ### 4. Восстановить символы и найти таблицу
 
 ```sh
-python3 -m venv /tmp/opencode/ota-venv
-/tmp/opencode/ota-venv/bin/pip install 'vmlinux-to-elf==1.4.0'
-/tmp/opencode/ota-venv/bin/vmlinux-to-elf \
-  /tmp/opencode/ota-kernel/Image /tmp/opencode/ota-kernel/vmlinux.elf
+python3 -m venv /tmp/chiroru-ota-venv
+/tmp/chiroru-ota-venv/bin/pip install 'vmlinux-to-elf==1.4.0'
+/tmp/chiroru-ota-venv/bin/vmlinux-to-elf \
+  /tmp/chiroru-ota-kernel/Image /tmp/chiroru-ota-kernel/vmlinux.elf
 python3 tools/ota/find_syscall_table.py \
-  /tmp/opencode/ota-kernel/Image /tmp/opencode/ota-kernel/vmlinux.elf
+  /tmp/chiroru-ota-kernel/Image /tmp/chiroru-ota-kernel/vmlinux.elf
 ```
 
 Анализатор проверяет совпадение LOAD-сегмента ELF с `Image`, затем ищет
