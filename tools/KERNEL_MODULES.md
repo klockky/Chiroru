@@ -61,6 +61,7 @@ python3 tools/build-kernel-modules.py 5000001248 /path/to/prepared-kernel /tmp/c
 python3 tools/build-kernel-modules.py 5000001289 /path/to/prepared-kernel /tmp/chiroru-modules-1289
 python3 tools/build-kernel-modules.py 5000001321 /path/to/prepared-kernel /tmp/chiroru-modules-1321
 python3 tools/build-kernel-modules.py 5000001346 /path/to/prepared-kernel /tmp/chiroru-modules-1346
+python3 tools/build-kernel-modules.py 5000001364 /path/to/prepared-kernel /tmp/chiroru-modules-1364
 python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/chiroru-modules-factory
 ```
 

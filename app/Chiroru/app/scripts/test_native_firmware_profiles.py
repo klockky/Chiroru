@@ -76,7 +76,7 @@ out:
 int main(void) {
     const struct chiroru_profile *all[] = { &profile_5000001307,
         &profile_1982735225, &profile_5000001245, &profile_5000001248,
-        &profile_5000001289, &profile_5000001321, &profile_5000001346 };
+        &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364 };
     for (unsigned i = 0; i < sizeof all / sizeof all[0]; ++i) { int rc = run(all[i]); if (rc) return rc; }
     return 0;
 }
@@ -136,7 +136,7 @@ static long fake_sysconf(int key) { (void)key; return page_size; }
 int main(int argc, char **argv) {
     struct rpt report;
     const struct chiroru_profile *all[] = { &profile_5000001307, &profile_1982735225, &profile_5000001245, &profile_5000001248,
-        &profile_5000001289, &profile_5000001321, &profile_5000001346 };
+        &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364 };
     const unsigned count = sizeof all / sizeof all[0];
     assert(argc == count + 1);
     for (unsigned i = 0; i < count; ++i) {
@@ -170,7 +170,7 @@ int main(int argc, char **argv) {
             subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
             subprocess.run([str(binary), *(str(APP / f"src/main/assets/firmware/chiron-{build}/chiroru_adb.ko")
                                           for build in ("5000001307", "1982735225", "5000001245", "5000001248", "5000001289", "5000001321",
-                                          "5000001346"))], check=True, timeout=10)
+                                          "5000001346", "5000001364"))], check=True, timeout=10)
 
 
 if __name__ == "__main__":
