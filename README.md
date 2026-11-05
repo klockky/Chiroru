@@ -33,6 +33,15 @@ In-app root работает до закрытия процесса Chiroru, ADB
 
 ## Документация
 
+Исходники для сборки:
+
+```sh
+git clone --recurse-submodules https://github.com/klockky/Chiroru.git
+```
+
+В существующем checkout: `git submodule update --init --recursive`.
+Адаптация KernelSU развивается в [KernelSU-Chiroru](https://github.com/klockky/KernelSU-Chiroru).
+
 - [Использование и сборка APK](app/Chiroru/README.md)
 - [Совместимость прошивок](app/Chiroru/FIRMWARE.md)
 - [Сборка модулей](tools/KERNEL_MODULES.md)

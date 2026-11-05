@@ -9,7 +9,7 @@ OUT="${3:?provide a new output directory}"
 SNAPSHOT="${4:-}"
 
 # Check generated vendor dependencies instead of silently accepting drift.
-python3 tools/gen_policy_writer.py linux-txn/source build-txn/selinux --check
+python3 tools/gen_policy_writer.py linux-txn/source third_party/kernelsu/kernel/selinux --check
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v tools/test_lifecycle_events.py
 python3 tools/build-kernel-modules.py "$FIRMWARE" "$HEADERS" "$OUT" --module ksu
 

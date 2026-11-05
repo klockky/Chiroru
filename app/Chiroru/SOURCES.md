@@ -26,7 +26,7 @@
 
 | Каталог | Назначение |
 |---|---|
-| `build-txn/` | KernelSU с адаптацией SELinux и обработкой служб UAPI 5 |
+| `third_party/kernelsu/` | Сабмодуль форка KernelSU-Next с адаптацией SELinux и обработкой служб UAPI 5 |
 | `linux-txn/` | Vendor SELinux parser и заголовки для обработки политики |
 | `root-console/` | Процессная root-консоль и работа с политикой в userspace |
 | `adb-root/` | Модуль `chiroru_adb` и клиент `chiroru-su` |
@@ -34,7 +34,7 @@
 | `tools/factory/` | Патчи и сборка factory KernelSU, демона и менеджера |
 | `tools/ota/` | Извлечение ядра из OTA и поиск таблицы системных вызовов |
 
-`build-txn/` обрабатывает `EVENT_SERVICES`: первый вызов разрешает запуск служб,
+`third_party/kernelsu/kernel/` обрабатывает `EVENT_SERVICES`: первый вызов разрешает запуск служб,
 повторные пропускаются. `post-fs-data` открывает новый цикл. Перед выполнением
 скриптов дочерний процесс загрузчика запрашивает `GRANT_ROOT` и проверяет переход
 в `u:r:ksu:s0`.
@@ -45,7 +45,7 @@
 [`profiles.json`](app/src/main/assets/firmware/profiles.json).
 Каждая прошивка имеет свои `kernelsu.ko` и `chiroru_adb.ko`.
 
-- Модули собираются из `build-txn/` и `adb-root/module/`; factory использует
+- Модули собираются из `third_party/kernelsu/kernel/` и `adb-root/module/`; factory использует
   дополнительный `tools/factory/kernel.patch`.
 - Общий `ksud-3.4.2` — ARM64 CLI KernelSU-Next с UAPI 5, полученный с тестовой станции.
 - Factory-демон и менеджер собираются из закреплённого upstream-коммита

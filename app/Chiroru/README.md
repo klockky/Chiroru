@@ -122,7 +122,8 @@ adb shell am start -n dev.chiron.chiroru/.MainActivity --es mode probe
 
 ## Сборка и проверки
 
-Нужен полный checkout, Linux, JDK 17, Python 3, C-компилятор,
+Нужен полный checkout с сабмодулем KernelSU (`git submodule update --init --recursive`),
+Linux, JDK 17, Python 3, C-компилятор,
 Android SDK platform/build-tools 36, NDK `28.2.13676358` и CMake `3.22.1`.
 
 Из этого каталога:

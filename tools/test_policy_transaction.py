@@ -20,7 +20,7 @@ def undefined(obj):
 class TransactionBinaryTest(unittest.TestCase):
     def test_no_preemption_counter_stubs(self):
         output = subprocess.check_output(
-            ["aarch64-linux-gnu-nm", str(WORK / "build-txn/kernelsu.ko")], text=True)
+            ["aarch64-linux-gnu-nm", str(WORK / "third_party/kernelsu/kernel/kernelsu.ko")], text=True)
         names = {line.split()[-1] for line in output.splitlines() if line.strip()}
         self.assertFalse(names & {"preempt_count_add", "preempt_count_sub"})
         header = (HEADERS / "include/generated/autoconf.h").read_text()
@@ -28,7 +28,7 @@ class TransactionBinaryTest(unittest.TestCase):
 
     def test_module_uses_vendor_selinuxfs_offset(self):
         module = subprocess.check_output(
-            ["aarch64-linux-gnu-objdump", "-d", str(WORK / "build-txn/selinux/policy_transaction.o")],
+            ["aarch64-linux-gnu-objdump", "-d", str(WORK / "third_party/kernelsu/kernel/selinux/policy_transaction.o")],
             text=True)
         self.assertIn("#968]", module)
         self.assertNotIn("#952]", module)
@@ -56,7 +56,7 @@ class TransactionBinaryTest(unittest.TestCase):
         self.assertIn("str\tw8, [x19, #72]", hashing)
 
     def test_writer_has_no_unchecked_kernel_writer_dependency(self):
-        names = undefined("build-txn/selinux/policy_writer.o")
+        names = undefined("third_party/kernelsu/kernel/selinux/policy_writer.o")
         self.assertFalse(names & {"policydb_write", "avtab_write", "avtab_write_item",
                                   "ebitmap_write", "cond_write_list", "cond_write_bool"})
         # Native hashtab iteration is read-only; all output callbacks are local.
@@ -65,13 +65,13 @@ class TransactionBinaryTest(unittest.TestCase):
                                   "mutex_lock", "schedule", "__cond_resched"})
 
     def test_native_publication_replaces_manual_swap_and_fallback(self):
-        names = undefined("build-txn/selinux/policy_transaction.o")
+        names = undefined("third_party/kernelsu/kernel/selinux/policy_transaction.o")
         self.assertIn("security_load_policy", names)
         self.assertIn("mutex_lock", names)
         self.assertIn("mutex_unlock", names)
         self.assertNotIn("security_read_policy", names)
         self.assertFalse(any("write_lock" in name for name in names))
-        rules = undefined("build-txn/selinux/rules.o")
+        rules = undefined("third_party/kernelsu/kernel/selinux/rules.o")
         self.assertIn("ksu_policy_transaction", rules)
         self.assertFalse(rules & {"stop_machine", "avc_ss_reset", "policydb_write",
                                   "sched_setscheduler_nocheck", "preempt_schedule"})
@@ -80,7 +80,7 @@ class TransactionBinaryTest(unittest.TestCase):
     def test_generated_sources_match_reviewed_vendor(self):
         subprocess.run(["python3", str(ROOT / "tools/gen_policy_writer.py"),
                         str(ROOT / "linux-txn/source"),
-                        str(ROOT / "build-txn/selinux"), "--check"], check=True)
+                        str(ROOT / "third_party/kernelsu/kernel/selinux"), "--check"], check=True)
 
     def test_preemption_config_consistent(self):
         spec = importlib.util.spec_from_file_location(

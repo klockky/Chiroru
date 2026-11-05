@@ -21,7 +21,7 @@ def main():
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     source = ROOT / "linux-txn/source/security/selinux"
-    mod = ROOT / "build-txn"
+    mod = ROOT / "third_party/kernelsu/kernel"
     # Stub only the Linux environment; policy structures/algorithms are the
     # original vendor sources, not libsepol's different in-memory layout.
     for name in ("linux/kernel.h", "linux/slab.h", "linux/sched.h", "linux/string.h",
@@ -55,7 +55,8 @@ def main():
              "-include", str(mod / "selinux/chiron_context.h"),
              "-I" + str(out), "-I" + str(Path(__file__).parent),
              "-I" + str(source), "-I" + str(source / "ss"),
-              "-I" + str(mod), "-I" + str(mod / "include"), "-I" + str(mod / "selinux")]
+               "-I" + str(mod), "-I" + str(mod / "include"), "-I" + str(mod / "selinux"),
+               "-I" + str(mod.parent)]
     sources = [source / "ss" / (name + ".c") for name in
                ("policydb", "ebitmap", "avtab", "hashtab", "symtab", "conditional")]
     sources += [out / "mls_validate.c", mod / "selinux/sepolicy.c",

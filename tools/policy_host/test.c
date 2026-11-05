@@ -4,7 +4,7 @@
 #include "selinux/policy_writer.h"
 #include "selinux/policy_sink.h"
 #include "selinux/selinuxfs_layout.h"
-#include "../../build-txn/selinux/rules.c"
+#include "../../third_party/kernelsu/kernel/selinux/rules.c"
 
 _Thread_local long host_fail_after = -1;
 _Thread_local long host_allocations;

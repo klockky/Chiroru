@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("module_build", Path(__file__).with_name("build-kernel-modules.py"))
 builder = importlib.util.module_from_spec(SPEC)
@@ -23,6 +24,78 @@ class ModuleBuildTest(unittest.TestCase):
 
     def release(self, build):
         return builder.profiles()[build]["match"]["kernelRelease"]
+
+    def git(self, directory, *args):
+        return subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "-c", "commit.gpgsign=false", "-c", "protocol.file.allow=always",
+             "-C", str(directory), *args], check=True, capture_output=True, text=True)
+
+    def submodule_tree(self):
+        source, parent = self.root / "upstream", self.root / "checkout"
+        source.mkdir()
+        parent.mkdir()
+        self.git(source, "init")
+        (source / "kernel").mkdir()
+        (source / "kernel/include").mkdir()
+        (source / "uapi").mkdir()
+        (source / "kernel/include/uapi").symlink_to("../../uapi")
+        (source / "kernel/Kbuild").write_text("# kernel build\n")
+        (source / "uapi/supercall.h").write_text("/* shared UAPI */\n")
+        self.git(source, "add", ".")
+        self.git(source, "commit", "-m", "Test upstream")
+        self.git(parent, "init")
+        self.git(parent, "submodule", "add", str(source), str(builder.KERNEL_SU))
+        (parent / "tools").mkdir()
+        (parent / "tools/build.py").write_text("# parent build tool\n")
+        self.git(parent, "add", "tools")
+        return parent
+
+    def test_source_snapshot_includes_submodule_uapi_and_local_edits(self):
+        parent = self.submodule_tree()
+        source = parent / builder.KERNEL_SU
+        (source / "kernel/Kbuild").write_text("# local tracked edit\n")
+        (source / "kernel/untracked.ko").write_bytes(b"not source")
+        out = self.root / "snapshot"
+        with mock.patch.object(builder, "ROOT", parent):
+            revision = builder.kernel_source_revision()
+            hashes = builder.copy_sources(out)
+        self.assertEqual(self.git(source, "rev-parse", "HEAD").stdout.strip(), revision)
+        self.assertEqual(set(hashes), {"tools/build.py", "third_party/kernelsu/kernel/Kbuild",
+                                       "third_party/kernelsu/kernel/include/uapi",
+                                       "third_party/kernelsu/uapi/supercall.h"})
+        self.assertEqual((out / builder.KERNEL_SOURCE / "Kbuild").read_text(), "# local tracked edit\n")
+        self.assertEqual((out / builder.KERNEL_SOURCE / "include/uapi/supercall.h").read_text(),
+                         "/* shared UAPI */\n")
+        self.assertFalse((out / builder.KERNEL_SU / ".git").exists())
+
+    def test_modified_uapi_symlink_cannot_escape_source_snapshot(self):
+        parent = self.submodule_tree()
+        link = parent / builder.KERNEL_SOURCE / "include/uapi"
+        link.unlink()
+        link.symlink_to(self.root)
+        with mock.patch.object(builder, "ROOT", parent):
+            with self.assertRaisesRegex(ValueError, "Unexpected source symlink"):
+                builder.copy_sources(self.root / "snapshot")
+
+    def test_uninitialized_submodule_is_rejected_before_copy(self):
+        parent = self.submodule_tree()
+        self.git(parent, "submodule", "deinit", "-f", "--", str(builder.KERNEL_SU))
+        out = self.root / "snapshot"
+        with mock.patch.object(builder, "ROOT", parent):
+            with self.assertRaisesRegex(ValueError, "submodule update --init"):
+                builder.copy_sources(out)
+        self.assertFalse(out.exists())
+
+    def test_publication_scan_checks_submodule_contents(self):
+        parent = self.submodule_tree()
+        nested = parent / builder.KERNEL_SOURCE / "Kbuild"
+        nested.write_text("/home/" + "private-developer/project/\n")
+        result = subprocess.run([sys.executable, str(builder.ROOT / "tools/check-public-files.py")],
+                                cwd=parent, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("third_party/kernelsu/kernel/Kbuild", result.stdout)
+        self.assertIn("home-directory path", result.stdout)
 
     def headers(self):
         root = self.root / "headers"

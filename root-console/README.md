@@ -39,7 +39,7 @@ KernelSU и ADB-модуль не используются. Сессия раб�
 ## Сборка и проверки
 
 Исполнитель собирается CMake вместе с APK. Он использует vendor parser/writer
-из `linux-txn/`, адаптеры из `build-txn/` и userspace-обёртки `tools/policy_host/`.
+из `linux-txn/`, адаптеры из `third_party/kernelsu/kernel/` и userspace-обёртки `tools/policy_host/`.
 Генератор проверяет хеши исходников и соответствие адаптеров.
 
 Из корня репозитория:

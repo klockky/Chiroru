@@ -1,6 +1,7 @@
 obj-m := chiroru_adb.o
 chiroru_adb-objs := main.o policy.o sepolicy.o policy_writer.o policy_transaction.o
-ccflags-y += -I$(src) -I$(src)/../../build-txn -I$(src)/../../build-txn/selinux
+ccflags-y += -I$(src) -I$(src)/../../third_party/kernelsu/kernel -I$(src)/../../third_party/kernelsu/kernel/selinux
+ccflags-y += -I$(src)/../../third_party/kernelsu
 ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
 ccflags-y += -I$(objtree)/security/selinux
-ccflags-y += -include $(src)/../../build-txn/selinux/chiron_context.h
+ccflags-y += -include $(src)/../../third_party/kernelsu/kernel/selinux/chiron_context.h

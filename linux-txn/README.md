@@ -10,7 +10,7 @@ subset; generated adapters also record the source file hashes and are checked
 by `tools/gen_policy_writer.py` on every native build.
 
 The userspace policy parser/writer uses these files with the Android context
-hash adapter in `build-txn/selinux/chiron_context.h`. This is a source subset;
+hash adapter in `third_party/kernelsu/kernel/selinux/chiron_context.h`. This is a source subset;
 kernel module builds require a separate full tree.
 
 For the external prepared tree requirements and profile-specific module build

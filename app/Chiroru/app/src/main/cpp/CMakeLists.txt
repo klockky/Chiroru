@@ -15,14 +15,17 @@ set_target_properties(chiroru_console PROPERTIES OUTPUT_NAME "libchiroru_console
 target_compile_options(chiroru_console PRIVATE -O2 -Wall -Wextra -Werror)
 
 get_filename_component(CHIRORU_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../.." ABSOLUTE)
+if(NOT EXISTS "${CHIRORU_ROOT}/third_party/kernelsu/kernel/selinux/policy_writer.c")
+    message(FATAL_ERROR "Initialize KernelSU: git submodule update --init --recursive")
+endif()
 set(POLICY_COMPAT "${CMAKE_CURRENT_BINARY_DIR}/policy-compat")
 execute_process(COMMAND python3 "${CHIRORU_ROOT}/tools/gen_policy_writer.py"
-    "${CHIRORU_ROOT}/linux-txn/source" "${CHIRORU_ROOT}/build-txn/selinux" --check
+    "${CHIRORU_ROOT}/linux-txn/source" "${CHIRORU_ROOT}/third_party/kernelsu/kernel/selinux" --check
     COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND python3 "${CHIRORU_ROOT}/tools/policy_host/build.py"
     --prepare-only --out "${POLICY_COMPAT}" COMMAND_ERROR_IS_FATAL ANY)
 set(VENDOR_POLICY "${CHIRORU_ROOT}/linux-txn/source/security/selinux")
-set(VERIFIED_POLICY "${CHIRORU_ROOT}/build-txn")
+set(VERIFIED_POLICY "${CHIRORU_ROOT}/third_party/kernelsu/kernel")
 add_library(console_policy OBJECT
     ${VENDOR_POLICY}/ss/policydb.c ${VENDOR_POLICY}/ss/ebitmap.c
     ${VENDOR_POLICY}/ss/avtab.c ${VENDOR_POLICY}/ss/hashtab.c
@@ -31,7 +34,8 @@ add_library(console_policy OBJECT
     ${VERIFIED_POLICY}/selinux/policy_writer.c ${CHIRORU_ROOT}/root-console/policy.c)
 target_include_directories(console_policy PRIVATE "${POLICY_COMPAT}"
     "${CHIRORU_ROOT}/tools/policy_host" "${VENDOR_POLICY}" "${VENDOR_POLICY}/ss"
-    "${VERIFIED_POLICY}" "${VERIFIED_POLICY}/include" "${VERIFIED_POLICY}/selinux")
+    "${VERIFIED_POLICY}" "${VERIFIED_POLICY}/include" "${VERIFIED_POLICY}/selinux"
+    "${CHIRORU_ROOT}/third_party/kernelsu")
 target_compile_options(console_policy PRIVATE -O2 -ffunction-sections -fdata-sections
     "SHELL:-include ${CHIRORU_ROOT}/tools/policy_host/compat.h"
     "SHELL:-include ${VERIFIED_POLICY}/selinux/chiron_context.h")

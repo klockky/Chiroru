@@ -6,6 +6,7 @@ and the public signing certificate are intentionally preserved.
 """
 import argparse
 import io
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -41,9 +42,14 @@ if __name__ == '__main__':
     parser.add_argument('paths', nargs='*', type=Path, help='Default: all Git-tracked files')
     args = parser.parse_args()
     paths = args.paths or [Path(p) for p in subprocess.check_output(
-        ['git', 'ls-files', '-z']).decode().split('\0') if p]
+        ['git', 'ls-files', '--recurse-submodules', '-z']).decode().split('\0') if p]
     errors = set()
     for path in paths:
+        if path.is_symlink():
+            check(str(path), os.fsencode(os.readlink(path)), errors)
+            continue
+        if not path.is_file():
+            parser.exit(1, f'{path}: missing source; run git submodule update --init --recursive\n')
         check(str(path), path.read_bytes(), errors)
     for name, reason in sorted(errors):
         print(f'{name}: {reason}')

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class LifecycleEventsTest(unittest.TestCase):
     def test_bootstrap_exception_requires_captured_domain_and_both_root_uids(self):
-        source = (ROOT / "build-txn/selinux/selinux.c").read_text()
+        source = (ROOT / "third_party/kernelsu/kernel/selinux/selinux.c").read_text()
         start = source.index("void ksu_capture_bootstrap_domain(void)")
         end = source.index("static int transive_to_domain(", start)
         program = r'''
@@ -54,7 +54,7 @@ int main(void) {
             subprocess.run([str(path / "test")], check=True, timeout=10)
 
     def test_root_domain_handoff_checks_identity_and_commits_only_on_success(self):
-        source = (ROOT / "build-txn/policy/app_profile.c").read_text()
+        source = (ROOT / "third_party/kernelsu/kernel/policy/app_profile.c").read_text()
         start = source.index("int ksu_adopt_root_domain(void)")
         end = source.index("int escape_with_root_profile(void)", start)
         program = r'''
@@ -112,10 +112,10 @@ int main(void) {
             subprocess.run([str(path / "test")], check=True, timeout=10)
 
     def test_services_handshake_reset_and_concurrent_claim(self):
-        source = (ROOT / "build-txn/supercall/dispatch.c").read_text()
+        source = (ROOT / "third_party/kernelsu/kernel/supercall/dispatch.c").read_text()
         start = source.index("static int do_report_event(")
         end = source.index("static int do_set_sepolicy(", start)
-        header = (ROOT / "build-txn/uapi/supercall.h").read_text()
+        header = (ROOT / "third_party/kernelsu/uapi/supercall.h").read_text()
         events = "\n".join(re.findall(r"^#define EVENT_\w+ \d+$", header, re.M))
         program = r'''
 #include <assert.h>

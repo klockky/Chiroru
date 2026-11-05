@@ -1,8 +1,16 @@
 # Сборка модулей ядра
 
 `build-kernel-modules.py` собирает `chiroru_adb.ko` из `adb-root/module/`
-и `kernelsu.ko` из `build-txn/`. Для factory применяется `tools/factory/kernel.patch`.
+и `kernelsu.ko` из `third_party/kernelsu/kernel/`. Для factory применяется `tools/factory/kernel.patch`.
 Все модули — AArch64, включая factory с 32-битным userspace.
+
+KernelSU подключён сабмодулем из [нашего форка KernelSU-Next](https://github.com/klockky/KernelSU-Chiroru),
+ветка `chiron` на основе upstream `v3.4.0-legacy`. Сборка использует закреплённый
+коммит, а не последнее состояние ветки. Перед сборкой:
+
+```sh
+git submodule update --init --recursive
+```
 
 ## Зависимости
 
@@ -71,7 +79,10 @@ python3 tools/build-kernel-modules.py 1982735225 /path/to/prepared-kernel /tmp/c
 
 Скрипт копирует заголовки в `OUTPUT/work/headers`, задаёт release выбранного
 профиля и собирает чистую копию отслеживаемых исходников. Изменения working tree
-учитываются; новые исходники нужно добавить в Git index. Полные исходники ядра
+учитываются; новые исходники нужно добавить в Git index соответствующего репозитория.
+Исходники сабмодуля и общие `uapi/` включаются рекурсивно. Его HEAD записывается
+в `build-info.json` как `kernelSuRevision`. Штатная ссылка `kernel/include/uapi`
+сохраняется; её SHA-256 вычисляется по тексту относительного пути. Полные исходники ядра
 остаются внешней зависимостью.
 
 ADB release guard задаётся через `CHIRORU_KERNEL_RELEASE` при компиляции.
@@ -101,7 +112,7 @@ Factory-демон и менеджер: [отдельная инструкция
 | Файл | Содержимое |
 |---|---|
 | `chiroru_adb.ko`, `kernelsu.ko` | Модули без debug-секций |
-| `build-info.json` | Профиль, компилятор, хеши входов и параметры сертификата |
+| `build-info.json` | Профиль, коммит KernelSU, компилятор, хеши входов и параметры сертификата |
 | `SHA256SUMS` | Хеши модулей и манифеста |
 | `work/` | Рабочие исходники, заголовки и объекты с локальными путями |
 

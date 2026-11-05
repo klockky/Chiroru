@@ -14,6 +14,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "app/Chiroru/app/src/main/assets/firmware/profiles.json"
+KERNEL_SU = Path("third_party/kernelsu")
+KERNEL_SOURCE = KERNEL_SU / "kernel"
 BUILDS = ("5000001307", "5000001245", "1982735225", "5000001248", "5000001289", "5000001321",
           "5000001346", "5000001364", "5000001388")
 CRC = 0x8395960f
@@ -102,17 +104,38 @@ def verify_module(path, release, adb=False):
             "module_layout": f"0x{CRC:08x}"}
 
 
+def kernel_source_revision():
+    source = ROOT / KERNEL_SU
+    instruction = "Initialize KernelSU with: git submodule update --init --recursive"
+    if not (source / ".git").exists() or not (source / "kernel/Kbuild").is_file():
+        raise ValueError(instruction)
+    top = subprocess.check_output(
+        ["git", "-C", str(source), "rev-parse", "--show-toplevel"], text=True).strip()
+    if Path(top).resolve() != source.resolve():
+        raise ValueError(instruction)
+    return subprocess.check_output(
+        ["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+
+
 def copy_sources(destination):
     # Only tracked source, but use working-tree contents so local edits are built.
+    kernel_source_revision()
     files = subprocess.check_output(
-        ["git", "-C", str(ROOT), "ls-files", "-z", "build-txn", "adb-root", "tools"]
+        ["git", "-C", str(ROOT), "ls-files", "--recurse-submodules", "-z",
+         str(KERNEL_SU), "adb-root", "tools"]
     ).decode().split("\0")
     hashes = {}
     for name in filter(None, files):
         src = ROOT / name
-        if src.is_symlink():
-            raise ValueError(f"Unexpected source symlink: {name}")
         dst = destination / name
+        if src.is_symlink():
+            target = os.readlink(src)
+            if Path(name) != KERNEL_SOURCE / "include/uapi" or target != "../../uapi":
+                raise ValueError(f"Unexpected source symlink: {name}")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.symlink_to(target)
+            hashes[name] = hashlib.sha256(target.encode()).hexdigest()
+            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         hashes[name] = digest(src)
@@ -127,6 +150,7 @@ def build(args):
         raise ValueError("Output directory already exists; choose a new directory")
     if out == headers or headers in out.parents or out in headers.parents:
         raise ValueError("Output and prepared kernel tree must be separate")
+    kernel_revision = kernel_source_revision()
     # Kbuild and KCFLAGS cannot reliably handle whitespace in these paths.
     if any(re.search(r"\s", str(p)) for p in (ROOT, headers, out, (headers / "source").resolve())):
         raise ValueError("Kbuild paths must not contain whitespace")
@@ -135,7 +159,7 @@ def build(args):
         if not shutil.which(tool):
             raise ValueError(f"Missing build tool: {tool}")
     run(sys.executable, ROOT / "tools/gen_policy_writer.py", ROOT / "linux-txn/source",
-        ROOT / "build-txn/selinux", "--check")
+        ROOT / KERNEL_SOURCE / "selinux", "--check")
     out.mkdir(parents=True)
     work = out / "work"
     work.mkdir()
@@ -152,7 +176,7 @@ def build(args):
     factory = args.firmware == "1982735225"
     build_ksu = args.module in ("all", "ksu")
     if factory and build_ksu:
-        run("patch", "--batch", "--fuzz=0", "-d", work / "build-txn", "-p1",
+        run("patch", "--batch", "--fuzz=0", "-d", work / KERNEL_SOURCE, "-p1",
             "-i", ROOT / "tools/factory/kernel.patch")
     # Map private paths before compilation; sanitization also checks the result.
     flags = (f"-ffile-prefix-map={work}=/src/Chiroru "
@@ -178,10 +202,11 @@ def build(args):
                 raise ValueError("Invalid factory manager certificate digest or DER size")
             options += ["KSU_MANAGER_PACKAGE=com.rifsxd.ksunext",
                         f"KSU_NEXT_MANAGER_HASH={manager_hash}", f"KSU_NEXT_MANAGER_SIZE={manager_size}"]
-        run(*common, f"M={work / 'build-txn'}", *options, f"KCFLAGS={kflags}", "modules")
-        modules["kernelsu.ko"] = work / "build-txn/kernelsu.ko"
+        run(*common, f"M={work / KERNEL_SOURCE}", *options, f"KCFLAGS={kflags}", "modules")
+        modules["kernelsu.ko"] = work / KERNEL_SOURCE / "kernelsu.ko"
     manifest = {"firmware": args.firmware, "kernelRelease": release,
                 "baseKernelRelease": base_release,
+                "kernelSuRevision": kernel_revision,
                 "compiler": subprocess.check_output([args.cross_compile + "gcc", "--version"], text=True).splitlines()[0],
                 "builderSha256": digest(Path(__file__)),
                 "catalogSha256": digest(CATALOG),
