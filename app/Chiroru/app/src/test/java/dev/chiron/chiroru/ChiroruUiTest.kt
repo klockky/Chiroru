@@ -11,6 +11,7 @@ import java.io.File
 import dev.chiron.chiroru.ui.ChiroruScaffold
 import dev.chiron.chiroru.ui.ChiroruTheme
 import dev.chiron.chiroru.firmware.FirmwareSupport
+import dev.chiron.chiroru.firmware.FirmwareEnvironment
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -111,6 +112,57 @@ class ChiroruUiTest {
         compose.onNodeWithText("Acquire root").performScrollTo().assertIsNotEnabled()
     }
 
+    @Test fun incompatibleManagerScreenRequiresRemovalThenExplicitContinuation() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val manager = FirmwareEnvironment.parseCatalog(context.assets.open("firmware/profiles.json")
+            .bufferedReader().use { it.readText() }).profiles.single { it.id == "chiron-5000001388" }.kernelSu!!.manager
+        val state = mutableStateOf(AppState(managerConflict = ManagerConflict(
+            Operation.MODULE_SAFE, manager, BundledManagerState.INCOMPATIBLE)))
+        var removes = 0
+        var continues = 0
+        var cancels = 0
+        compose.setContent { ChiroruTheme { ChiroruScaffold(state.value, uninstallManager = { removes++ },
+            continueManager = { continues++ }, dismissManager = { cancels++ }) } }
+        compose.onNodeWithText("Incompatible KernelSU manager").assertIsDisplayed()
+        compose.onNodeWithText("Home").assertDoesNotExist()
+        compose.onNodeWithText("Continue to root").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Uninstall incompatible manager").performScrollTo().performClick()
+        assertEquals(1, removes)
+        // Cancellation leaves the incompatible status and Continue disabled.
+        compose.onNodeWithText("Continue to root").performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle { state.value = state.value.copy(managerConflict = state.value.managerConflict!!
+            .copy(status = BundledManagerState.MISSING)) }
+        compose.onNodeWithText("Uninstall incompatible manager").assertDoesNotExist()
+        compose.onNodeWithText("Continue to root").performScrollTo().assertIsEnabled()
+        assertEquals(0, continues)
+        compose.onNodeWithText("Continue to root").performClick()
+        assertEquals(1, continues)
+        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        assertEquals(1, cancels)
+    }
+
+    @Test fun factoryConflictRequiresMatchingInstallBeforeContinuation() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val manager = FirmwareEnvironment.parseCatalog(context.assets.open("firmware/profiles.json")
+            .bufferedReader().use { it.readText() }).profiles.single { it.id == "chiron-1982735225" }.kernelSu!!.manager
+        val state = mutableStateOf(AppState(managerConflict = ManagerConflict(
+            Operation.MODULE, manager, BundledManagerState.MISSING)))
+        var installs = 0
+        var continues = 0
+        compose.setContent { ChiroruTheme { ChiroruScaffold(state.value, installBundledManager = { installs++ },
+            continueManager = { continues++ }) } }
+        compose.onNodeWithText("Continue to root").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Install matching manager").performScrollTo().performClick()
+        assertEquals(1, installs)
+        assertEquals(0, continues)
+        compose.runOnIdle { state.value = state.value.copy(managerConflict = state.value.managerConflict!!
+            .copy(status = BundledManagerState.READY), checkingRuntime = true) }
+        compose.onNodeWithText("Continue to root").performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle { state.value = state.value.copy(checkingRuntime = false) }
+        compose.onNodeWithText("Continue to root").assertIsEnabled().performClick()
+        assertEquals(1, continues)
+    }
+
     @Test fun liveProcessConsoleAllowsCommandsWithoutRestartOrAdbModule() {
         val commands = mutableListOf<Pair<String, Boolean>>()
         compose.setContent { ChiroruTheme { ChiroruScaffold(AppState(kernelTouched = true,
@@ -187,8 +239,7 @@ class ChiroruUiTest {
             runtime = RuntimeStatus(false, KernelSuState.LOADED), runtimeChecked = true,
         ), run = operations::add) } }
         compose.onNodeWithText("KernelSU loaded").assertIsDisplayed()
-        compose.onNodeWithText("Detected on device").assertIsDisplayed()
-        compose.onNodeWithText("Chiroru process: no root credentials").assertIsDisplayed()
+        compose.onNodeWithText("Chiroru process: no root").assertIsDisplayed()
         compose.onNodeWithText("Acquire root").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("KSU Next Manager installed.").assertDoesNotExist()
         assertEquals(emptyList<Operation>(), operations)
@@ -196,9 +247,8 @@ class ChiroruUiTest {
 
     @Test fun deniedRuntimeEvidenceIsNotShownAsAbsentOrNotStarted() {
         compose.setContent { ChiroruTheme { ChiroruScaffold(AppState(duoMax = true, runtimeChecked = true)) } }
-        compose.onAllNodesWithText("KernelSU: current state unavailable")[0].performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Not started").assertDoesNotExist()
-        compose.onNodeWithText("KernelSU: not found in the module list").assertDoesNotExist()
+        compose.onAllNodesWithText("KernelSU: status unknown")[0].performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("KernelSU: not loaded").assertDoesNotExist()
         compose.onNodeWithText("Root acquired").assertDoesNotExist()
     }
 
@@ -217,10 +267,10 @@ class ChiroruUiTest {
                 firmwareSupport = FirmwareSupport.ROOT_AND_KERNEL_SU), run = operations::add) }
         }
         compose.onNodeWithText("Chiroru").assertIsDisplayed()
-        compose.onNodeWithText("Ready when you are").assertIsDisplayed()
+        compose.onNodeWithText("Ready").assertIsDisplayed()
         snapshot("home-light")
         compose.onNodeWithText("Journal").performClick()
-        compose.onNodeWithText("A fresh start").assertIsDisplayed()
+        compose.onNodeWithText("No reports yet").assertIsDisplayed()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Appearance").performScrollTo().assertIsDisplayed()
         assertEquals(emptyList<Operation>(), operations)
@@ -327,7 +377,6 @@ class ChiroruUiTest {
         compose.onNodeWithText("KernelSU loaded with errors").assertIsDisplayed()
         compose.onNodeWithText("Module startup scripts failed. Root remains available; see the journal for details.")
             .assertIsDisplayed()
-        compose.onNodeWithText("Check report").assertIsDisplayed()
         compose.onNodeWithText("Acquire root").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Downloading the manager from GitHub…").performScrollTo().assertIsDisplayed()
         assertEquals(emptyList<Operation>(), operations)

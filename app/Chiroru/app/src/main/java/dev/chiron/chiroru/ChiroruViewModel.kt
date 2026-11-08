@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dev.chiron.chiroru.firmware.FirmwareEnvironment
 import dev.chiron.chiroru.firmware.FirmwareSupport
 import dev.chiron.chiroru.firmware.ManagerSource
+import dev.chiron.chiroru.firmware.ManagerSupport
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +46,7 @@ internal data class AppState(
     val bundledManager: BundledManagerState? = null,
     val preparingManager: Boolean = false,
     val managerInstallError: String? = null,
+    val managerConflict: ManagerConflict? = null,
 )
 
 internal class ChiroruViewModel(application: Application) : AndroidViewModel(application) {
@@ -107,6 +109,7 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun run(operation: Operation) {
+        if (mutableState.value.managerConflict != null) return
         if (mutableState.value.preparingManager) return
         if (console.state.value.running) return
         if (mutableState.value.running != null) return
@@ -117,6 +120,16 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
         viewModelScope.launch {
             // Let Compose draw the pending state. The native call itself must run on main.
             delay(120)
+            if (operation == Operation.MODULE || operation == Operation.MODULE_SAFE) {
+                firmware.profile?.kernelSu?.manager?.let { requirement ->
+                    val conflict = ManagerConflict(operation, requirement, readManagerStatus(requirement))
+                    if (!conflict.canContinue) {
+                        mutableState.update { it.copy(running = null, managerConflict = conflict,
+                            managerInstallError = null) }
+                        return@launch
+                    }
+                }
+            }
             val report = Loader.run(getApplication(), operation)
             val result = ReportResult.parse(operation, report)
             val time = DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date())
@@ -137,6 +150,46 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
         if (mutableState.value.running != null || mutableState.value.managerStep?.busy == true ||
             !Loader.moduleLoaded) return
         viewModelScope.launch { ensureManager() }
+    }
+
+    private suspend fun readManagerStatus(requirement: ManagerSupport) = withContext(Dispatchers.IO) {
+        runCatching { ManagerPackages.state(getApplication(), requirement) }
+            .getOrDefault(BundledManagerState.UNAVAILABLE)
+    }
+
+    fun dismissManagerConflict() {
+        if (mutableState.value.preparingManager) return
+        mutableState.update { it.copy(managerConflict = null, managerInstallError = null) }
+    }
+
+    fun continueAfterManagerConflict() {
+        val current = mutableState.value
+        val conflict = current.managerConflict ?: return
+        if (!conflict.canContinue || current.checkingRuntime || current.preparingManager ||
+            current.running != null || current.managerStep?.busy == true || current.console.running ||
+            current.runtime.blocksRootOperation || Loader.kernelTouched) return
+        mutableState.update { it.copy(managerConflict = null, managerInstallError = null) }
+        run(conflict.operation) // Both the foreground check and Loader revalidate the package.
+    }
+
+    fun uninstallIncompatibleManager(context: android.content.Context) {
+        val current = mutableState.value
+        val conflict = current.managerConflict ?: return
+        if (conflict.status != BundledManagerState.INCOMPATIBLE || current.preparingManager ||
+            current.running != null || current.checkingRuntime || current.managerStep?.busy == true ||
+            current.runtime.blocksRootOperation || Loader.kernelTouched) return
+        mutableState.update { it.copy(preparingManager = true, managerInstallError = null) }
+        viewModelScope.launch {
+            try {
+                val intent = withContext(Dispatchers.IO) { ManagerPackages.uninstallIntent(context, conflict.requirement) }
+                if (intent != null) context.startActivity(intent)
+            } catch (error: Exception) {
+                mutableState.update { it.copy(managerInstallError = error.message) }
+            } finally {
+                mutableState.update { it.copy(preparingManager = false) }
+                refreshRuntime()
+            }
+        }
     }
 
     fun installBundledManager(context: android.content.Context) {
@@ -224,11 +277,15 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
                     runCatching { ManagerPackages.state(getApplication(), it) }.getOrDefault(BundledManagerState.UNAVAILABLE)
                 }
             } else mutableState.value.bundledManager
+            val conflict = mutableState.value.managerConflict
+            val conflictStatus = conflict?.let { readManagerStatus(it.requirement) }
             Loader.runtime = runtime
             android.util.Log.i(Loader.TAG, "Runtime: processRoot=${runtime.processRoot} KernelSU=${runtime.kernelSu} adbRoot=${runtime.adbRoot}")
             mutableState.update { it.copy(runtime = runtime, consoleRootAvailable = consoleRoot || processConsole,
                 processConsoleAvailable = processConsole,
                 bundledManager = bundledManager,
+                managerConflict = if (it.managerConflict == conflict && conflictStatus != null)
+                    conflict?.copy(status = conflictStatus) else it.managerConflict,
                 checkingRuntime = false, runtimeChecked = true) }
         }
     }

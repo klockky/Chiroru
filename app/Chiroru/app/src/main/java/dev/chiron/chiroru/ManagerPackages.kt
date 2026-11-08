@@ -17,6 +17,16 @@ import java.security.MessageDigest
 /** Read-only checks also work before root and during direct boot. */
 internal enum class BundledManagerState { CHECKING, MISSING, READY, INCOMPATIBLE, UNAVAILABLE }
 
+/** A paused foreground KSU request; returning from Android never starts root. */
+internal data class ManagerConflict(
+    val operation: Operation,
+    val requirement: ManagerSupport,
+    val status: BundledManagerState,
+) {
+    val canContinue: Boolean get() = status == BundledManagerState.READY ||
+        (status == BundledManagerState.MISSING && requirement.source == ManagerSource.OFFICIAL_RELEASE)
+}
+
 internal object ManagerPackages {
     fun state(context: Context, requirement: ManagerSupport): BundledManagerState {
         val info = installed(context, requirement) ?: return BundledManagerState.MISSING
@@ -43,6 +53,13 @@ internal object ManagerPackages {
     fun readyForLoad(context: Context, requirement: ManagerSupport): Boolean =
         installed(context, requirement)?.let { accepts(it, requirement) }
             ?: (requirement.source == ManagerSource.OFFICIAL_RELEASE)
+
+    /** Recheck immediately before offering Android's user-confirmed uninstall. */
+    fun uninstallIntent(context: Context, requirement: ManagerSupport): Intent? {
+        val installed = installed(context, requirement) ?: return null
+        check(!accepts(installed, requirement)) { "The installed manager is already compatible" }
+        return Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.parse("package:${requirement.packageName}"))
+    }
 
     /** Android's package installer runs before the exploit, with normal app credentials. */
     fun installIntent(context: Context): Intent {

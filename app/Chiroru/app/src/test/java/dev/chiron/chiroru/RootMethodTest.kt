@@ -65,7 +65,9 @@ class RootMethodTest {
     @Test fun factoryManagerPrerequisiteOnlyBlocksKernelSu() {
         BundledManagerState.entries.forEach { manager ->
             val state = supported.copy(bundledManager = manager)
-            assertEquals(manager == BundledManagerState.READY, RootMethod.KERNEL_SU.canRun(state))
+            // Incompatible managers allow opening the resolution screen, not native root.
+            assertEquals(manager == BundledManagerState.READY || manager == BundledManagerState.INCOMPATIBLE,
+                RootMethod.KERNEL_SU.canRun(state))
             assertTrue(RootMethod.IN_APP.canRun(state))
             assertTrue(RootMethod.ADB.canRun(state))
             assertTrue(RootMethod.PROBE.canRun(state))

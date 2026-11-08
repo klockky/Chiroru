@@ -60,17 +60,14 @@ internal fun ConsoleScreen(state: AppState, run: (String, Boolean) -> Unit, stop
             Text(if (root) "# root" else "$ shell",
                 style = if (keyboardVisible) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineLarge,
                 fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-            Text("Root")
             Switch(checked = root, onCheckedChange = { selectedRoot = it }, modifier = Modifier.semantics { contentDescription = "Root" },
                 enabled = !state.processConsoleAvailable && !console.running && (state.consoleRootAvailable || root))
             TextButton(onClick = clear) { Text(stringResource(R.string.console_clear)) }
         }
-        if (!keyboardVisible) Text(stringResource(when {
-            state.processConsoleAvailable -> R.string.console_process_root
-            state.consoleRootAvailable -> R.string.console_hint
-            else -> R.string.console_no_root
-        }),
-            style = MaterialTheme.typography.bodySmall)
+        if (!keyboardVisible && (state.processConsoleAvailable || !state.consoleRootAvailable)) {
+            Text(stringResource(if (state.processConsoleAvailable) R.string.console_process_root else R.string.console_no_root),
+                style = MaterialTheme.typography.bodySmall)
+        }
         Surface(Modifier.weight(1f).fillMaxWidth(), shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHighest) {
             SelectionContainer {
