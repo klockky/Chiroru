@@ -41,7 +41,7 @@ def verify(apk):
         if {p["id"] for p in catalog["profiles"]} != {
                 "chiron-1982735225", "chiron-5000001307", "chiron-5000001245", "chiron-5000001248",
                 "chiron-5000001289", "chiron-5000001321", "chiron-5000001346", "chiron-5000001364",
-                "chiron-5000001388"}:
+                "chiron-5000001388", "chiron-1926931523"}:
             raise ValueError("Release must contain all supported firmware profiles")
         for abi, cls, machine in (("arm64-v8a", 2, 183), ("armeabi-v7a", 1, 40)):
             for library in ("libchiroru.so", "libchiroru_console.so", "libchiroru_root_console.so"):

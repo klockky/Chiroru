@@ -452,6 +452,15 @@ int main(int argc, char **argv)
     selinux_state.ss = &ss;
 
     test_writer();
+    /* Saved runtime policies already contain KSU types. A stock firmware
+     * policy must exercise their real first creation before fault tests. */
+    if (!hashtab_search(ss.policydb.p_types.table, "ksu")) {
+        assert(!apply_kernelsu_rules());
+        assert(hashtab_search(ss.policydb.p_types.table, "ksu"));
+        assert(hashtab_search(ss.policydb.p_types.table, "ksu_file"));
+        test_writer();
+        puts("stock policy: initial KernelSU type/rule creation verified");
+    }
     test_faults();
     test_xperm_and_filename();
     test_transaction_failures();

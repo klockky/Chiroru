@@ -1,8 +1,14 @@
-# Factory 1982735225: KernelSU Next
+# Factory: KernelSU Next
 
 This profile supports `chiron-1982735225`, Android 11, kernel
 `5.4.125-android11-2-g85fe5498964f-ab1982735225`, 32-bit ARM userspace.
 The loader checks the full firmware identity before running.
+
+Profile `1926931523` uses kernel
+`5.4.125-android11-2-g01f6e99e580b-ab1926931523` and distinct modules with the same
+ARMv7 client, daemon and manager. KernelSU and autoload are user-reported working;
+In-app and ADB root remain unverified. See [evidence](../ota/1926931523.md). Build it with
+`tools/build-kernel-modules.py 1926931523 HEADERS NEW_OUTPUT`.
 
 ## Use
 

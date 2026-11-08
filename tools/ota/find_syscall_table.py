@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find a unique arm64 syscall table using an Image and its reconstructed ELF."""
+"""Find a unique ARM64 or AArch32 compat syscall table in a reconstructed Image."""
 import argparse
 import json
 from pathlib import Path
@@ -10,9 +10,14 @@ ANCHORS = {0: "__arm64_sys_io_setup", 48: "__arm64_sys_faccessat",
            79: "__arm64_sys_newfstatat", 142: "__arm64_sys_reboot",
            147: "__arm64_sys_setresuid", 221: "__arm64_sys_execve",
            281: "__arm64_sys_execveat"}
+COMPAT_ANCHORS = {0: "__arm64_sys_restart_syscall", 1: "__arm64_sys_exit",
+                  3: "__arm64_sys_read", 4: "__arm64_sys_write",
+                  11: "__arm64_compat_sys_execve", 88: "__arm64_sys_reboot",
+                  208: "__arm64_sys_setresuid", 327: "__arm64_sys_fstatat64",
+                  334: "__arm64_sys_faccessat", 387: "__arm64_compat_sys_execveat"}
 
 
-def symbols_and_base(image, elf):
+def symbols_and_base(image, elf, compat=False):
     if len(image) < 64 or image[56:60] != b"ARMd":
         raise ValueError("Expected ARM64 Image")
     if len(elf) < 64 or elf[:6] != b"\x7fELF\x02\x01":
@@ -28,7 +33,7 @@ def symbols_and_base(image, elf):
     if len(bases) != 1:
         raise ValueError("ELF must contain exactly one LOAD segment identical to this Image")
     sections = [struct.unpack_from("<IIQQQQIIQQ", elf, h[6] + i * h[11]) for i in range(h[12])]
-    wanted = {"_stext", *ANCHORS.values()}
+    wanted = {"_stext", *(COMPAT_ANCHORS if compat else ANCHORS).values()}
     symbols = {}
     for section in sections:
         if section[1] != 2:
@@ -51,36 +56,39 @@ def symbols_and_base(image, elf):
     return symbols, bases[0]
 
 
-def find_table(image, symbols, base):
-    needle = struct.pack("<Q", symbols[ANCHORS[0]])
+def find_table(image, symbols, base, compat=False):
+    anchors = COMPAT_ANCHORS if compat else ANCHORS
+    needle = struct.pack("<Q", symbols[anchors[0]])
     matches, start = [], 0
     while True:
         offset = image.find(needle, start)
         if offset < 0:
             break
         start = offset + 1
-        if offset % 8 or offset + (max(ANCHORS) + 1) * 8 > len(image):
+        if offset % 8 or offset + (max(anchors) + 1) * 8 > len(image):
             continue
         if all(struct.unpack_from("<Q", image, offset + nr * 8)[0] == symbols[name]
-               for nr, name in ANCHORS.items()):
+               for nr, name in anchors.items()):
             matches.append(offset)
     if len(matches) != 1:
         raise ValueError(f"Expected one syscall table; found {len(matches)}")
     offset = matches[0]
-    return {"sys_call_table": {"imageOffset": hex(offset),
-                              "stextRelative": hex(base + offset - symbols["_stext"])},
-            "validatedSlots": ANCHORS}
+    name = "compat_sys_call_table" if compat else "sys_call_table"
+    return {name: {"imageOffset": hex(offset),
+                   "stextRelative": hex(base + offset - symbols["_stext"])},
+            "validatedSlots": anchors}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path)
     parser.add_argument("elf", type=Path, help="ELF reconstructed by vmlinux-to-elf")
+    parser.add_argument("--compat", action="store_true", help="Find the ARM EABI compat table")
     args = parser.parse_args()
     try:
         image = args.image.read_bytes()
-        symbols, base = symbols_and_base(image, args.elf.read_bytes())
-        print(json.dumps(find_table(image, symbols, base), indent=2))
+        symbols, base = symbols_and_base(image, args.elf.read_bytes(), args.compat)
+        print(json.dumps(find_table(image, symbols, base, args.compat), indent=2))
     except (OSError, ValueError, IndexError, struct.error) as error:
         parser.exit(1, f"Analysis failed: {error}\n")
 

@@ -77,7 +77,7 @@ int main(void) {
     const struct chiroru_profile *all[] = { &profile_5000001307,
         &profile_1982735225, &profile_5000001245, &profile_5000001248,
         &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364,
-        &profile_5000001388 };
+        &profile_5000001388, &profile_1926931523 };
     for (unsigned i = 0; i < sizeof all / sizeof all[0]; ++i) { int rc = run(all[i]); if (rc) return rc; }
     return 0;
 }
@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
     struct rpt report;
     const struct chiroru_profile *all[] = { &profile_5000001307, &profile_1982735225, &profile_5000001245, &profile_5000001248,
         &profile_5000001289, &profile_5000001321, &profile_5000001346, &profile_5000001364,
-        &profile_5000001388 };
+        &profile_5000001388, &profile_1926931523 };
     const unsigned count = sizeof all / sizeof all[0];
     assert(argc == count + 1);
     for (unsigned i = 0; i < count; ++i) {
@@ -172,9 +172,9 @@ int main(int argc, char **argv) {
             subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
             subprocess.run([str(binary), *(str(APP / f"src/main/assets/firmware/chiron-{build}/chiroru_adb.ko")
                                           for build in ("5000001307", "1982735225", "5000001245", "5000001248", "5000001289", "5000001321",
-                                          "5000001346", "5000001364", "5000001388"))], check=True, timeout=10)
+                                          "5000001346", "5000001364", "5000001388", "1926931523"))], check=True, timeout=10)
 
-    def test_1388_ksu_syscall_symbol_matches_its_decrypted_ota_address(self):
+    def test_ksu_symbols_match_independently_recovered_image_addresses(self):
         profiles = SOURCE[SOURCE.index("struct chiroru_vendor_sym"):SOURCE.index("#define WALK_SUB")]
         patcher = SOURCE[SOURCE.index("static int patch_vendor_syms("):SOURCE.index("static int patch_module_symbols(")]
         program = r'''
@@ -195,7 +195,7 @@ int main(int argc, char **argv) {
     assert(fread(data, 1, size, file) == (size_t)size); fclose(file);
     struct rpt report;
     assert(patch_vendor_syms(data, size, 0xffffffc010080800ULL,
-                            &profile_5000001388, 4, &report) == 0);
+                            &profile_BUILD, VENDOR_COUNT, &report) == 0);
     Elf64_Ehdr *eh = data;
     Elf64_Shdr *sections = (Elf64_Shdr *)((char *)data + eh->e_shoff);
     int found = 0;
@@ -204,11 +204,9 @@ int main(int argc, char **argv) {
         const char *names = (char *)data + sections[sections[i].sh_link].sh_offset;
         Elf64_Sym *symbols = (Elf64_Sym *)((char *)data + sections[i].sh_offset);
         for (unsigned j = 0; j < sections[i].sh_size / sizeof *symbols; ++j) {
-            if (strcmp(names + symbols[j].st_name, "sys_call_table")) continue;
+            if (strcmp(names + symbols[j].st_name, "SYMBOL")) continue;
             assert(symbols[j].st_shndx == SHN_ABS);
-            /* Independent OTA evidence: Image base + 0xEEEEE8, located by
-             * seven named syscall slots. Reusing 1364 would yield +0xEEEF00. */
-            assert(symbols[j].st_value == 0xffffffc010f6eee8ULL);
+            assert(symbols[j].st_value == EXPECTED_ADDRESS);
             found++;
         }
     }
@@ -219,10 +217,22 @@ int main(int argc, char **argv) {
 '''
         with tempfile.TemporaryDirectory() as directory:
             source, binary = Path(directory) / "ksu.c", Path(directory) / "ksu"
-            source.write_text(program)
-            subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
-            subprocess.run([str(binary), str(APP / "src/main/assets/firmware/chiron-5000001388/kernelsu.ko")],
-                           check=True, timeout=10)
+            # Image offsets recovered from syscall slots and instruction references,
+            # not copied from the native vendor arrays under test.
+            cases = [("5000001388", 4, {"sys_call_table": 0xEEEEE8}),
+                     ("1926931523", 5, {"sys_call_table": 0xEEEC78,
+                      "compat_sys_call_table": 0xEF36F0, "init_mm": 0x12BF060,
+                      "selinux_state": 0x147D310, "selinux_blob_sizes": 0xFE2C3C})]
+            for build, count, symbols in cases:
+                for symbol, offset in symbols.items():
+                    with self.subTest(build=build, symbol=symbol):
+                        text = program.replace("profile_BUILD", f"profile_{build}")
+                        text = text.replace("VENDOR_COUNT", str(count)).replace("SYMBOL", symbol)
+                        text = text.replace("EXPECTED_ADDRESS", f"{0xffffffc010080000 + offset:#x}ULL")
+                        source.write_text(text)
+                        subprocess.run(["cc", "-std=gnu11", "-O2", str(source), "-o", str(binary)], check=True)
+                        subprocess.run([str(binary), str(APP / f"src/main/assets/firmware/chiron-{build}/kernelsu.ko")],
+                                       check=True, timeout=10)
 
 
 if __name__ == "__main__":

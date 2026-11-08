@@ -1,6 +1,8 @@
 # Factory ADB module
 
 Firmware `1982735225` uses an ARM64 kernel with 32-bit userspace and no `linker64`.
+`1926931523` uses the same loader/client with its own module and exact release
+guard; [ADB root hardware validation is pending](../tools/ota/1926931523.md).
 The factory loader resolves ELF64 symbols and calls `init_module()` directly
 from the 32-bit app. Its `chiroru-su` client is a static ARMv7 executable.
 

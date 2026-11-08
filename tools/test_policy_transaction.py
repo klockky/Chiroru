@@ -37,8 +37,11 @@ class TransactionBinaryTest(unittest.TestCase):
         if "CHIRORU_KERNEL_ELF" not in os.environ:
             self.skipTest("Set CHIRORU_KERNEL_ELF for the optional full vendor ELF check")
         elf = Path(os.environ["CHIRORU_KERNEL_ELF"])
-        self.assertEqual(hashlib.sha256(elf.read_bytes()).hexdigest(),
-                         "013dd6aee9724e6f1f6de4f459a60568445c585e28920aae1fc8fec5579cf0da")
+        self.assertIn(hashlib.sha256(elf.read_bytes()).hexdigest(), {
+            "013dd6aee9724e6f1f6de4f459a60568445c585e28920aae1fc8fec5579cf0da",
+            # 1926931523, reconstructed by vmlinux-to-elf 1.4.0 from verified boot.
+            "46d40725e00651cbbc36b7abde977b16340ccd2ce4f01da0ed38a2818b45fd6a",
+        })
         disasm = subprocess.check_output(
             ["aarch64-linux-gnu-objdump", "-d", "--disassemble=sel_write_load", str(elf)], text=True)
         # Native file -> inode -> superblock -> private info -> mutex/state.

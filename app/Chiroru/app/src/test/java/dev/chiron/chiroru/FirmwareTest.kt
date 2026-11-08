@@ -65,6 +65,29 @@ class FirmwareTest {
         assertEquals("chiron-1982735225-adb", selection.profile?.adbRoot?.backend)
     }
 
+    @Test fun olderFactoryRequiresExactIdentityAndDistinctModulesWithSharedArmv7Userspace() {
+        val catalog = FirmwareEnvironment.parseCatalog(catalogText)
+        val identity = FirmwareIdentity("chiron", "YNDX-00055",
+            "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1926931523:user/dev-keys", "1926931523", 30,
+            "5.4.125-android11-2-g01f6e99e580b-ab1926931523", "armv8l", 4096)
+        val candidate = checkNotNull(catalog.select(identity).profile)
+        val factory = catalog.profiles.single { it.id == "chiron-1982735225" }
+        assertEquals("chiron-1926931523", candidate.id)
+        assertEquals("chiron-1926931523-adb", candidate.adbRoot!!.backend)
+        assertEquals("chiron-1926931523", candidate.kernelSu!!.backend)
+        assertEquals(factory.adbRoot!!.client, candidate.adbRoot!!.client)
+        assertEquals(factory.kernelSu!!.manager, candidate.kernelSu!!.manager)
+        assertEquals(factory.kernelSu!!.ksud, candidate.kernelSu!!.ksud)
+        for (other in catalog.profiles.filter { it.id != candidate.id }) {
+            assertNull(catalog.select(identity.copy(fingerprint = other.identity.fingerprint)).profile)
+            assertNull(catalog.select(identity.copy(incremental = other.identity.incremental)).profile)
+            assertNull(catalog.select(identity.copy(kernelRelease = other.identity.kernelRelease)).profile)
+            assertNotEquals(other.adbRoot!!.module.sha256, candidate.adbRoot!!.module.sha256)
+            assertNotEquals(other.kernelSu!!.module.sha256, candidate.kernelSu!!.module.sha256)
+        }
+        assertNull(catalog.select(identity.copy(machine = "aarch64")).profile)
+    }
+
     @Test fun factoryAdbRootUsesItsOwnStaticClientWithoutKernelSu() {
         val factory = FirmwareEnvironment.parseCatalog(catalogText).profiles.single { it.id == "chiron-1982735225" }
         contents.clear()

@@ -35,12 +35,13 @@ def boot_fixture():
     return wrapped, plain, image
 
 
-def table_fixture():
+def table_fixture(compat=False):
     image = image_fixture()
     base = 0xffffffc010080000
-    symbols = {name: base + 0x100 + nr * 4 for nr, name in finder.ANCHORS.items()}
+    anchors = finder.COMPAT_ANCHORS if compat else finder.ANCHORS
+    symbols = {name: base + 0x100 + nr * 4 for nr, name in anchors.items()}
     symbols["_stext"] = base + 0x800
-    for nr, name in finder.ANCHORS.items():
+    for nr, name in anchors.items():
         struct.pack_into("<Q", image, 0x1800 + nr * 8, symbols[name])
     return image, symbols, base
 
@@ -111,6 +112,22 @@ class AmlBootTest(unittest.TestCase):
 
 
 class SyscallTableTest(unittest.TestCase):
+    def test_compat_table_checks_every_anchor_and_rejects_ambiguity(self):
+        image, symbols, base = table_fixture(compat=True)
+        recovered, mapped_base = finder.symbols_and_base(image, elf_fixture(image, symbols, base), compat=True)
+        result = finder.find_table(image, recovered, mapped_base, compat=True)
+        self.assertEqual("0x1000", result["compat_sys_call_table"]["stextRelative"])
+        for nr in finder.COMPAT_ANCHORS:
+            broken = bytearray(image)
+            struct.pack_into("<Q", broken, 0x1800 + nr * 8, 0)
+            with self.assertRaisesRegex(ValueError, "found 0"):
+                finder.find_table(broken, recovered, mapped_base, compat=True)
+        image.extend(bytes(0x1000))
+        for nr, name in finder.COMPAT_ANCHORS.items():
+            struct.pack_into("<Q", image, 0x3000 + nr * 8, symbols[name])
+        with self.assertRaisesRegex(ValueError, "found 2"):
+            finder.find_table(image, recovered, mapped_base, compat=True)
+
     def test_matching_elf_recovers_unique_table(self):
         image, symbols, base = table_fixture()
         recovered, mapped_base = finder.symbols_and_base(image, elf_fixture(image, symbols, base))

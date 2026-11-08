@@ -17,7 +17,7 @@ CATALOG = ROOT / "app/Chiroru/app/src/main/assets/firmware/profiles.json"
 KERNEL_SU = Path("third_party/kernelsu")
 KERNEL_SOURCE = KERNEL_SU / "kernel"
 BUILDS = ("5000001307", "5000001245", "1982735225", "5000001248", "5000001289", "5000001321",
-          "5000001346", "5000001364", "5000001388")
+          "5000001346", "5000001364", "5000001388", "1926931523")
 CRC = 0x8395960f
 HEADER_INPUTS = (".config", "include/config/auto.conf",
                  "include/generated/autoconf.h", "include/generated/utsrelease.h",
@@ -173,7 +173,7 @@ def build(args):
     (prepared / "include/generated/utsrelease.h").write_text(f'#define UTS_RELEASE "{release}"\n')
     target = work / "target.h"
     target.write_text(f'#define CHIRORU_KERNEL_RELEASE "{release}"\n')
-    factory = args.firmware == "1982735225"
+    factory = profile["match"]["machine"] == "armv8l"
     build_ksu = args.module in ("all", "ksu")
     if factory and build_ksu:
         run("patch", "--batch", "--fuzz=0", "-d", work / KERNEL_SOURCE, "-p1",

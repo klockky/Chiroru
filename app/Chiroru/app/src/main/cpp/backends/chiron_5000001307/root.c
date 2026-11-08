@@ -142,6 +142,37 @@ static const struct chiroru_profile profile_5000001307 = {
     .vendor = vendor_syms_5000001307,
 };
 
+/* Decrypted factory 1926931523; KernelSU/autoload reported working by a user.
+ * Both syscall tables were located independently; globals and layouts were
+ * checked against instruction references and exported-symbol records.
+ * The expected physical load address is guarded by the runtime Image header. */
+static const struct chiroru_vendor_sym vendor_syms_1926931523[] = {
+    {"selinux_state", 0x147CB10ULL},
+    {"selinux_blob_sizes", 0xFE243CULL},
+    {"sys_call_table", 0xEEE478ULL},
+    {"init_mm", 0x12BE860ULL},
+    {"compat_sys_call_table", 0xEF2EF0ULL},
+};
+static const struct chiroru_profile profile_1926931523 = {
+    .id = "chiron-1926931523",
+    .fingerprint = "Yandex/chiron/chiron:11/RQ3A.210805.001.A1/1926931523:user/dev-keys",
+    .incremental = "1926931523",
+    .kernel_release = "5.4.125-android11-2-g01f6e99e580b-ab1926931523",
+    .machine = "armv8l",
+    .image_pa = 0x1080000ULL,
+    .image_size = 0x14b6000ULL,
+    .init_task_pa = 0x22f7480ULL,
+    .use_magic_lbase = 0,
+    .memstart_addr_pa = 0x2061fc8ULL,
+    .vabits_actual_pa = 0x2097a20ULL,
+    .kimage_voffset_pa = 0x2061fd8ULL,
+    .modules_supported = 1,
+    .direct_adb = 1,
+    .direct_ksu = 1,
+    .vendor_count = 5,
+    .vendor = vendor_syms_1926931523,
+};
+
 static const struct chiroru_vendor_sym vendor_syms_1982735225[] = {
     {"selinux_state", 0x147CB10ULL},
     {"selinux_blob_sizes", 0xFE253CULL},
@@ -1797,6 +1828,11 @@ int chiron_5000001307_root(const char *ko_path, const char *ksud_path,
   return chiroru_root_with(&profile_5000001307, ko_path, ksud_path, run_hooks, r);
 }
 
+int chiron_1926931523_root(const char *ko_path, const char *ksud_path,
+                           int run_hooks, struct rpt *r) {
+  return chiroru_root_with(&profile_1926931523, ko_path, ksud_path, run_hooks, r);
+}
+
 int chiron_1982735225_root(const char *ko_path, const char *ksud_path,
                            int run_hooks, struct rpt *r) {
   return chiroru_root_with(&profile_1982735225, ko_path, ksud_path, run_hooks, r);
@@ -1837,7 +1873,7 @@ int chiron_5000001388_root(const char *ko_path, const char *ksud_path,
   return chiroru_root_with(&profile_5000001388, ko_path, ksud_path, run_hooks, r);
 }
 
-const char *chiron_1982735225_probe(void) {
+static const char *factory_probe(const struct chiroru_profile *prof) {
   static char out[6144];
   char fp[192] = {0}, inc[96] = {0};
   struct utsname u;
@@ -1846,15 +1882,23 @@ const char *chiron_1982735225_probe(void) {
   __system_property_get("ro.build.fingerprint", fp);
   __system_property_get("ro.build.version.incremental", inc);
   if (uname(&u) != 0) { u.release[0] = 0; u.machine[0] = 0; }
-  gate = !strcmp(fp, profile_1982735225.fingerprint) &&
-         !strcmp(inc, profile_1982735225.incremental) &&
-         !strcmp(u.release, profile_1982735225.kernel_release);
+  gate = !strcmp(fp, prof->fingerprint) &&
+         !strcmp(inc, prof->incremental) &&
+         !strcmp(u.release, prof->kernel_release);
   snprintf(out, sizeof out,
            "factory profile: %s\n"
            "fingerprint=%s\nincremental=%s\nkernel=%s machine=%s\n%s",
            gate ? "exact match" : "MISMATCH — no operation will run",
            fp, inc, u.release, u.machine, mali_jm_probe());
   return out;
+}
+
+const char *chiron_1926931523_probe(void) {
+  return factory_probe(&profile_1926931523);
+}
+
+const char *chiron_1982735225_probe(void) {
+  return factory_probe(&profile_1982735225);
 }
 
 static int adb_app_identity(struct rpt *r) {
@@ -2000,6 +2044,15 @@ int chiron_5000001388_adb_root(const char *ko, const char *loader, int hooks, st
   if (snprintf(adb_console_params, sizeof adb_console_params,
                "console_uid=%u console_context=%s", (unsigned)uid, context) >= (int)sizeof adb_console_params) return -1;
   return chiroru_root_with(&profile_5000001388, ko, loader, -1, r);
+}
+
+int chiron_1926931523_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
+  (void)hooks;
+  if (!ko) { rp(r, "preflight: blocked (ADB module required)\n"); return -1; }
+  if (profile_gate(&profile_1926931523, r) != 0) return -1;
+  if (adb_app_identity(r) < 0) return -1;
+  adb_console_params[0] = 0;
+  return chiroru_root_with(&profile_1926931523, ko, loader, -1, r);
 }
 
 int chiron_1982735225_adb_root(const char *ko, const char *loader, int hooks, struct rpt *r) {
