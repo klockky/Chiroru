@@ -5,6 +5,15 @@
 
 void chiroru_grant_boot_adb_permission(struct rpt *report);
 
+JNIEXPORT jboolean JNICALL
+Java_dev_chiron_chiroru_NativeBridge_bootCompleted(JNIEnv *env, jclass cls) {
+  (void)env;
+  (void)cls;
+  char value[PROP_VALUE_MAX] = {0};
+  return __system_property_get("sys.boot_completed", value) == 1 && value[0] == '1'
+      ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jstring JNICALL
 Java_dev_chiron_chiroru_NativeBridge_grantBootAdbPermission(JNIEnv *env, jclass cls) {
   (void)cls;

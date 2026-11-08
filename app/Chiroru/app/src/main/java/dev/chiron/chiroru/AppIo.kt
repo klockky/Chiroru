@@ -12,7 +12,6 @@ import java.io.RandomAccessFile
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.withContext
 
 /** Keep private write handles open across JNI's credential change. Android 11
  * forbids app setuid calls; normal thread creation alone does not isolate creds. */
@@ -26,6 +25,7 @@ internal object AppIo {
 
     fun prepare(context: Context) {
         check(Looper.myLooper() == Looper.getMainLooper())
+        BootGuard.prepare(context)
         if (prepared == null) {
             val storage = Loader.storage(context)
             val directory = File(storage.cacheDir, "manager").apply {

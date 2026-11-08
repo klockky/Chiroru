@@ -84,7 +84,13 @@
     <string name="boot_delay">Autoload delay</string>
     <string name="boot_delay_value">%1$d s after station startup</string>
     <string name="boot_delay_seconds">Seconds</string>
-    <string name="boot_delay_hint">From station startup. 0 means no wait. Changes apply immediately.</string>
+    <string name="boot_delay_hint">From station startup. 0 starts at the first Android boot event. Changes apply immediately.</string>
+    <string name="boot_guard_home">Autoload paused. Resume in Settings.</string>
+    <string name="boot_guard_checking">Waiting for startup confirmation…</string>
+    <string name="boot_guard_paused">The previous autoload was not confirmed. Autoload is paused.</string>
+    <string name="boot_guard_unavailable">Boot guard unavailable. Autoload is blocked.</string>
+    <string name="boot_guard_resume">Allow autoload from next boot</string>
+    <string name="boot_guard_resume_failed">Could not save recovery. Autoload remains blocked.</string>
     <string name="boot_delay_range">Whole seconds from 0 to 86400 (24 hours)</string>
     <string name="save">Save</string>
     <string name="autoload_hint">Independent of the selected method. Enable in only one loader.</string>

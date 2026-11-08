@@ -65,6 +65,7 @@ internal fun ChiroruApp(state: AppState, model: ChiroruViewModel) {
         continueManager = model::continueAfterManagerConflict,
         dismissManager = model::dismissManagerConflict,
         refreshManager = model::refreshRuntime,
+        resumeBoot = model::resumeBoot,
         initialTab = if ((context as? android.app.Activity)?.intent?.getBooleanExtra("open_console", false) == true) 3 else 0,
     )
 }
@@ -92,6 +93,7 @@ internal fun ChiroruScaffold(
     continueManager: () -> Unit = {},
     dismissManager: () -> Unit = {},
     refreshManager: () -> Unit = {},
+    resumeBoot: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     val screenStates = rememberSaveableStateHolder()
@@ -135,7 +137,7 @@ internal fun ChiroruScaffold(
                             1 -> JournalScreen(state, clear, refresh)
                             3 -> ConsoleScreen(state, runConsole, stopConsole, clearConsole, restartConsole)
                             else -> SettingsScreen(state, setBoot, setTheme, setRootMethod, setBootDelay,
-                                setAdbOnBoot, refreshAdbPermission)
+                                setAdbOnBoot, refreshAdbPermission, resumeBoot)
                         }
                     }
                 }
@@ -208,6 +210,9 @@ private fun HomeScreen(state: AppState, run: (Operation) -> Unit, journal: () ->
     retryManager: () -> Unit, installBundledManager: () -> Unit) {
     Page(stringResource(R.string.app_name)) {
         StatusCard(state, run, journal)
+        if (state.bootEnabled && state.bootGuard in setOf(BootGuardStatus.PAUSED, BootGuardStatus.UNAVAILABLE)) {
+            Text(stringResource(R.string.boot_guard_home), color = MaterialTheme.colorScheme.error)
+        }
         if (state.rootMethod == RootMethod.KERNEL_SU) state.bundledManager?.let { manager ->
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -418,7 +423,7 @@ private fun JournalScreen(state: AppState, clear: () -> Unit, refresh: () -> Uni
 @Composable
 private fun SettingsScreen(state: AppState, setBoot: (Boolean) -> Unit, setTheme: (String) -> Unit,
     setRootMethod: (RootMethod) -> Unit, setBootDelay: (Int) -> Unit,
-    setAdbOnBoot: (Boolean) -> Unit, refreshAdbPermission: () -> Unit) {
+    setAdbOnBoot: (Boolean) -> Unit, refreshAdbPermission: () -> Unit, resumeBoot: () -> Unit) {
     var editingDelay by rememberSaveable { mutableStateOf(false) }
     if (editingDelay) BootDelayDialog(state.bootDelaySeconds,
         onDismiss = { editingDelay = false }, onSave = { setBootDelay(it); editingDelay = false })
@@ -476,6 +481,21 @@ private fun SettingsScreen(state: AppState, setBoot: (Boolean) -> Unit, setTheme
             SectionTitle(R.string.automation)
             SettingSwitch(R.string.autoload, null, state.bootEnabled, setBoot,
                 enabled = (state.duoMax && state.firmwareSupport.canLoadKernelSu) || state.bootEnabled)
+            if (state.bootGuard != BootGuardStatus.READY) {
+                Text(stringResource(when (state.bootGuard) {
+                    BootGuardStatus.CHECKING -> R.string.boot_guard_checking
+                    BootGuardStatus.PAUSED -> R.string.boot_guard_paused
+                    else -> R.string.boot_guard_unavailable
+                }), style = MaterialTheme.typography.bodyMedium)
+                if (state.bootGuard != BootGuardStatus.CHECKING) {
+                    TextButton(onClick = resumeBoot, enabled = state.running == null) {
+                        Text(stringResource(R.string.boot_guard_resume))
+                    }
+                }
+            }
+            if (state.bootGuardResumeFailed) {
+                Text(stringResource(R.string.boot_guard_resume_failed), color = MaterialTheme.colorScheme.error)
+            }
             ActionRow(Glyph.Settings, R.string.boot_delay,
                 stringResource(R.string.boot_delay_value, state.bootDelaySeconds), onClick = { editingDelay = true })
             if (!state.duoMax || !state.firmwareSupport.canLoadKernelSu) {

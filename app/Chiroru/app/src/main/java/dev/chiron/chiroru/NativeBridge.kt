@@ -5,6 +5,7 @@ internal object NativeBridge {
     init { System.loadLibrary("chiroru") }
 
     @JvmStatic external fun supports(backendId: String): Boolean
+    @JvmStatic external fun bootCompleted(): Boolean
     /** 1: GET_INFO succeeded; -1: seccomp blocked; 0: unavailable, not absence. */
     @JvmStatic external fun kernelSuQuery(): Int
     @JvmStatic external fun adbRootPresent(): Boolean

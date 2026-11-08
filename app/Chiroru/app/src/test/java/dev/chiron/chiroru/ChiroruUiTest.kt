@@ -27,6 +27,26 @@ class ChiroruUiTest {
     @get:Rule val compose = createComposeRule()
     private lateinit var renderedView: View
 
+    @Test fun pausedAutoloadNeedsExplicitRecoveryAndCannotBeResetDuringConfirmation() {
+        val state = mutableStateOf(AppState(duoMax = true, firmwareSupport = FirmwareSupport.ROOT_AND_KERNEL_SU,
+            bootEnabled = true, bootGuard = BootGuardStatus.PAUSED))
+        var resumes = 0
+        val operations = mutableListOf<Operation>()
+        compose.setContent { ChiroruTheme { ChiroruScaffold(state.value, run = operations::add,
+            resumeBoot = { resumes++ }) } }
+        compose.onNodeWithText("Autoload paused. Resume in Settings.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("The previous autoload was not confirmed. Autoload is paused.")
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Allow autoload from next boot").performScrollTo().performClick()
+        assertEquals(1, resumes)
+        assertEquals(emptyList<Operation>(), operations)
+        compose.onNode(isToggleable() and hasText("Load KernelSU automatically")).performScrollTo().assertIsOn()
+        compose.runOnIdle { state.value = state.value.copy(bootGuard = BootGuardStatus.CHECKING) }
+        compose.onNodeWithText("Waiting for startup confirmation…").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Allow autoload from next boot").assertDoesNotExist()
+    }
+
     @Test
     // Robolectric #8460: custom window widths loop with text fields in dialogs.
     @Config(sdk = [30], qualifiers = "en-rUS-w320dp-h915dp-xhdpi")

@@ -18,7 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -40,6 +42,8 @@ class LoadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A second broadcast must neither cancel work nor post under patched credentials.
+        if (loading) return START_NOT_STICKY
         startForeground(1, notification())
         val preferences = AppPreferences(this)
         val boot = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
@@ -49,7 +53,6 @@ class LoadService : Service() {
         // in flight; by then recordBootAttempt() has marked this boot as
         // attempted. Stopping here would cancel the coroutine that is about to
         // persist the report and would abort an otherwise successful load.
-        if (loading) return START_NOT_STICKY
         if (alreadyAttempted && preferences.lastBootId == null && bootId != null) {
             // Upgrade an attempt made by an older Chiroru in this same Android boot.
             preferences.recordBootAttempt(boot, bootId)
@@ -57,6 +60,13 @@ class LoadService : Service() {
         if (!preferences.bootEnabled || alreadyAttempted ||
             !FirmwareEnvironment.inspect(this).support.canLoadKernelSu) {
             if (alreadyAttempted) Log.i(Loader.TAG, "Boot load skipped: kernel boot already attempted ($bootId)")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        BootGuard.prepare(this)
+        if (!BootGuard.canStart(BootGuard.bootToken(this))) {
+            Log.w(Loader.TAG, "Boot load skipped: guard=${BootGuard.status.value}")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -112,9 +122,6 @@ class LoadService : Service() {
         }
         loading = true
         updateNotification(getString(R.string.running))
-        // Persist before entering native code; the second boot broadcast must not repeat it.
-        preferences.recordBootAttempt(
-            Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1), BootSession.currentId())
         scope.launch {
             val report = StringBuilder()
             val started = SystemClock.elapsedRealtime()
@@ -124,6 +131,18 @@ class LoadService : Service() {
                 }
                 Loader.runtime = RuntimeStatus(RuntimeDetector.processRoot(), kernelSu, adbRoot)
                 AppIo.prepare(this@LoadService)
+                if (Loader.runtime.blocksRootOperation) {
+                    report.append("Boot load skipped: root or a loaded module already detected\n")
+                    return@launch
+                }
+                // Both stores must be durable before native code can change the kernel.
+                val boot = BootGuard.bootToken(this@LoadService)
+                check(boot != null && BootGuard.canStart(boot)) { "Boot guard blocks autoload" }
+                check(preferences.recordBootAttempt(
+                    Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1), BootSession.currentId())) {
+                    "Cannot persist boot identity"
+                }
+                check(BootGuard.begin(boot)) { "Cannot persist boot guard; root was not started" }
                 var lastReport = ""
                 for (attempt in 1..3) {
                     lastReport = Loader.run(this@LoadService, Operation.MODULE)
@@ -133,19 +152,41 @@ class LoadService : Service() {
                 }
                 // Persist the native report before any network operation.
                 AppIo.writeBootReport(report.toString())
-                if (ManagerInstaller.shouldRun(Operation.MODULE, lastReport)) {
-                    val manager = ManagerInstaller.ensureInstalled(this@LoadService) { step ->
-                        updateNotification(getString(step.messageResource))
+                coroutineScope {
+                    // A successful module load alone does not prove Android has booted.
+                    // Manager downloads run independently of the boot health window.
+                    val health = async {
+                        val confirmed = ReportResult.parse(Operation.MODULE, lastReport).outcome == Outcome.MODULE_LOADED &&
+                            BootHealth.await(
+                                { runCatching { NativeBridge.bootCompleted() }.getOrDefault(false) },
+                                SystemClock::elapsedRealtime,
+                            ) && BootGuard.confirm(boot)
+                        if (!confirmed) BootGuard.finish()
+                        confirmed
                     }
-                    report.append(manager.report)
+                    if (ManagerInstaller.shouldRun(Operation.MODULE, lastReport)) {
+                        try {
+                            val manager = ManagerInstaller.ensureInstalled(this@LoadService) { step ->
+                                updateNotification(getString(step.messageResource))
+                            }
+                            report.append(manager.report)
+                        } catch (error: kotlinx.coroutines.CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            report.append("Manager installation failed: $error\n")
+                        }
+                    }
+                    report.append(if (health.await()) "Boot guard: healthy startup confirmed\n"
+                        else "Boot guard: startup unconfirmed; autoload paused until manual resume\n")
                 }
             } catch (error: Exception) {
                 Log.e(Loader.TAG, "Boot loading failed", error)
                 report.append("Boot loading failed: $error\n")
             } finally {
+                BootGuard.finish()
                 report.append("started ${started / 1000.0}s, finished ${SystemClock.elapsedRealtime() / 1000.0}s uptime\n")
                 // stopSelf()/onDestroy may cancel this scope at any moment;
-                // the final report is the only record of a boot attempt.
+                // retain the final report even if the health check was cancelled.
                 runCatching { withContext(NonCancellable) { AppIo.writeBootReport(report.toString()) } }
                     .onFailure { Log.e(Loader.TAG, "Cannot save boot report", it) }
                 stopForeground(STOP_FOREGROUND_REMOVE)

@@ -27,6 +27,8 @@ internal data class AppState(
     val report: String = "",
     val bootReport: String = "",
     val bootEnabled: Boolean = false,
+    val bootGuard: BootGuardStatus = BootGuardStatus.READY,
+    val bootGuardResumeFailed: Boolean = false,
     val adbOnBoot: Boolean = false,
     val adbSettingsPermission: Boolean = false,
     val bootDelaySeconds: Int = BootDelay.DEFAULT_SECONDS,
@@ -76,6 +78,10 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     }
 
     init {
+        BootGuard.prepare(application)
+        viewModelScope.launch {
+            BootGuard.status.collect { status -> mutableState.update { it.copy(bootGuard = status) } }
+        }
         viewModelScope.launch { console.state.collect { value -> mutableState.update { it.copy(console = value) } } }
         refreshBootReport()
         refreshRuntime()
@@ -222,6 +228,12 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
         mutableState.update { it.copy(bootEnabled = enabled) }
     }
 
+    fun resumeBoot() {
+        if (mutableState.value.running != null) return
+        val resumed = BootGuard.resume(getApplication())
+        mutableState.update { it.copy(bootGuardResumeFailed = !resumed) }
+    }
+
     fun setTheme(theme: String) {
         preferences.theme = theme
         mutableState.update { it.copy(theme = theme) }
@@ -253,6 +265,7 @@ internal class ChiroruViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun refreshBootReport() {
+        BootGuard.prepare(getApplication())
         viewModelScope.launch {
             val report = runCatching { AppIo.readBootReport(getApplication()) }
                 .getOrElse { "Cannot read boot report: $it" }

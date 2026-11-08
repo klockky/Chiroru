@@ -54,12 +54,9 @@ internal class AppPreferences(context: Context) {
             else boot >= 0 && lastBoot == boot
     }
 
-    fun recordBootAttempt(boot: Int, bootId: String?) {
+    fun recordBootAttempt(boot: Int, bootId: String?): Boolean {
         // One synchronous transaction before JNI: never replay after a process
         // death or a framework-only restart with a new Android BOOT_COUNT.
-        preferences.edit(commit = true) {
-            putInt("last_boot", boot)
-            putString("last_boot_id", bootId)
-        }
+        return preferences.edit().putInt("last_boot", boot).putString("last_boot_id", bootId).commit()
     }
 }

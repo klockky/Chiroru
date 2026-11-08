@@ -68,6 +68,24 @@ class BootReceiverTest {
         assertEquals(0, Settings.Global.getInt(application.contentResolver, Settings.Global.DEVICE_PROVISIONED))
     }
 
+    @Test fun unfinishedRootAttemptDoesNotPreventIndependentAdbStartup() {
+        val file = java.io.File(Loader.storage(application).filesDir, "boot-guard")
+        BootGuardStore(file) {}.use { guard ->
+            assertTrue(guard.begin("count:41"))
+            adbPermission(true)
+            AppPreferences(application).adbOnBoot = true
+            AppPreferences(application).bootEnabled = true
+            Settings.Global.putInt(application.contentResolver, Settings.Global.BOOT_COUNT, 42)
+            for (action in listOf(Intent.ACTION_LOCKED_BOOT_COMPLETED, Intent.ACTION_BOOT_COMPLETED)) {
+                BootReceiver().onReceive(application, Intent(action))
+                assertEquals(AdbMonitorService::class.java.name, shadowOf(application).nextStartedService.component?.className)
+                assertEquals(LoadService::class.java.name, shadowOf(application).nextStartedService.component?.className)
+                assertTrue(guard.read()!!.pending)
+                assertFalse(guard.canStart("count:42"))
+            }
+        }
+    }
+
     @Test fun missingAdbPermissionDoesNotBlockKernelSuAndCanBeRetried() {
         val preferences = AppPreferences(application)
         preferences.adbOnBoot = true

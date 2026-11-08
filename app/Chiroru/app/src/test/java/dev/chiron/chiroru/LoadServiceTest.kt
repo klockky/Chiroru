@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.os.Process
 import android.system.Os
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -24,6 +25,23 @@ class LoadServiceTest {
     class IdentityOs {
         companion object {
             @Implementation @JvmStatic fun getuid(): Int = Process.myUid()
+        }
+    }
+
+    @Test fun duplicateBootBroadcastDoesNotStopAnActiveAttemptOrPostAfterRoot() {
+        val controller = Robolectric.buildService(LoadService::class.java).create()
+        val service = controller.get()
+        LoadService::class.java.getDeclaredField("loading").apply { isAccessible = true }.set(service, true)
+        val application = RuntimeEnvironment.getApplication()
+        val manager = shadowOf(application.getSystemService(NotificationManager::class.java))
+        ShadowProcess.setUid(0)
+        try {
+            assertEquals(android.app.Service.START_NOT_STICKY, service.onStartCommand(null, 0, 2))
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            assertEquals(0, manager.size())
+        } finally {
+            ShadowProcess.setUid(application.applicationInfo.uid)
+            controller.destroy()
         }
     }
 

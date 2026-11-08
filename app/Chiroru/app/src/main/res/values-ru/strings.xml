@@ -84,7 +84,13 @@
     <string name="boot_delay">Задержка автозапуска</string>
     <string name="boot_delay_value">%1$d с после включения станции</string>
     <string name="boot_delay_seconds">Секунды</string>
-    <string name="boot_delay_hint">Отсчёт от включения станции. 0 — без ожидания. Изменение применяется сразу.</string>
+    <string name="boot_delay_hint">Отсчёт от включения станции. 0 — по первому boot-событию Android. Изменение применяется сразу.</string>
+    <string name="boot_guard_home">Автозагрузка приостановлена. Возобновление — в настройках.</string>
+    <string name="boot_guard_checking">Ожидание подтверждения загрузки…</string>
+    <string name="boot_guard_paused">Предыдущий автозапуск не подтверждён. Автозагрузка приостановлена.</string>
+    <string name="boot_guard_unavailable">Состояние защиты недоступно. Автозагрузка заблокирована.</string>
+    <string name="boot_guard_resume">Разрешить автозагрузку со следующего старта</string>
+    <string name="boot_guard_resume_failed">Не удалось сохранить решение. Автозагрузка остаётся заблокирована.</string>
     <string name="boot_delay_range">Целое число от 0 до 86400 (24 часа)</string>
     <string name="save">Сохранить</string>
     <string name="autoload_hint">Не зависит от выбранного способа. Включайте только в одном загрузчике.</string>
