@@ -42,7 +42,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001307/kernelsu.ko",
-          "sha256": "b4a66c69cd199276f363ff8f26deec7c5d0057b4b004a1ba50c737f4e5ca6088"
+          "sha256": "a517581a1845a88755d75779d6efb16216096d710883ebac1d617a68b8432282"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -95,7 +95,7 @@
         },
         "module": {
           "asset": "firmware/chiron-1982735225/kernelsu.ko",
-          "sha256": "22b22c88e1cd5e1832ddd72f9b585052b3703622aaff321e3840e35dce844c92"
+          "sha256": "b176af3b5b3cdd49b821ec7823f4c90d86f423e6c8f4b35804f6a9b3b1d86250"
         },
         "ksud": {
           "asset": "firmware/chiron-1982735225/ksud",
@@ -148,7 +148,7 @@
         },
         "module": {
           "asset": "firmware/chiron-1926931523/kernelsu.ko",
-          "sha256": "76b86a270c81412a9faebf6b4045cf5b7947baf273c45820efad66e1d5604187"
+          "sha256": "5ef463f38df4357557a9e763c55fa0f82191f06a135ce77632304fa78918648d"
         },
         "ksud": {
           "asset": "firmware/chiron-1982735225/ksud",
@@ -197,7 +197,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001245/kernelsu.ko",
-          "sha256": "58188983aa55028dbb08477b4eb384c395f0ffd39aeea22d7f2d411a47b005e4"
+          "sha256": "e279d4b5077274603f2458f19134e092eb27fb79583dfe7bcb72c6120ab9a701"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -246,7 +246,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001248/kernelsu.ko",
-          "sha256": "812178a7a3bfe645aebf92615b1370f8206c77e6411ca6481b90a393961d776f"
+          "sha256": "9e039f7c8efb8bdafd4b282943083afd5ec2d12464a95a0863a00cfbaaefb8d4"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -295,7 +295,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001321/kernelsu.ko",
-          "sha256": "9a7dc3a0b7efa2ba3373ce20527f93d081788a9b4afa44c91cf279f095bd2173"
+          "sha256": "0d4fa46af6cd719cccbc0cc5721f9cf9739b0bb065a8b299496d07c74b239493"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -344,7 +344,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001289/kernelsu.ko",
-          "sha256": "037a9d23a4342b44f202150e18d691b263879cc3617364876c2a952f5a2bd1f7"
+          "sha256": "4e11da46cd8088c7a6d8412a49764db5ef9741b6cfb012d54959603db90454b4"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -393,7 +393,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001388/kernelsu.ko",
-          "sha256": "9d36cc499dcd6b076996cd1044f00c897b9a6c5b8d166433f9b90fc56744406b"
+          "sha256": "8c9ec30a6dddf937504d46a1ad8287e266f0c4ca82b7df9ee19b2798dbe079a0"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -442,7 +442,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001364/kernelsu.ko",
-          "sha256": "d2a83263677b605b036d6e5913a4a19088d9e177dbdcb6635dc59418cdcc7d7f"
+          "sha256": "4f10f1449735c4538a1e1164f416d77b744fc61c742b9fb9c5900aee797e0e27"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",
@@ -491,7 +491,7 @@
         },
         "module": {
           "asset": "firmware/chiron-5000001346/kernelsu.ko",
-          "sha256": "4083e53c168633a117259666aca7b323a63e61b1a7b91ae1131ee78e7fed9954"
+          "sha256": "84c4b1b54fc66c2870943f19d5caec75e6ec1d60a8ff1880e40f87080eb328f8"
         },
         "ksud": {
           "asset": "common/ksud-3.4.2",

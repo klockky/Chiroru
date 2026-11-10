@@ -45,6 +45,11 @@
 [`profiles.json`](app/src/main/assets/firmware/profiles.json).
 Каждая прошивка имеет свои `kernelsu.ko` и `chiroru_adb.ko`.
 
+В 0.8.1 все десять `kernelsu.ko` пересобраны из KernelSU-Chiroru
+`10ed3691ec92e3997144ca91ded20b27c4be1efd`: динамическое определение AppID
+менеджера, наблюдение за изменениями пакетов и инициализация FD wrapper.
+Factory-патч сохраняет проверку сертификата перед загрузкой модуля.
+
 - Модули собираются из `third_party/kernelsu/kernel/` и `adb-root/module/`; factory использует
   дополнительный `tools/factory/kernel.patch`.
 - Общий `ksud-3.4.2` — ARM64 CLI KernelSU-Next с UAPI 5, полученный с тестовой станции.

@@ -597,12 +597,11 @@
  
  #include "policy/allowlist.h"
  #include "manager/apk_sign.h"
-@@ -15,7 +16,20 @@
- #include "manager/manager_identity.h"
+@@ -16,6 +17,17 @@
  #include "manager/throne_tracker.h"
  
+ uid_t ksu_manager_appid = KSU_INVALID_APPID; /* resolved dynamically by track_throne() */
 +#ifdef KSU_FACTORY_COMPAT
-+uid_t ksu_manager_appid = KSU_INVALID_APPID;
 +static char *factory_manager_apk;
 +module_param_named(manager_apk, factory_manager_apk, charp, 0);
 +
@@ -612,23 +611,11 @@
 +	       !strncmp(factory_manager_apk, "/data/app/", 10) &&
 +	       is_manager_apk(factory_manager_apk);
 +}
-+#else
- uid_t ksu_manager_appid = 10058; /* com.rifsxd.ksunext */
 +#endif
  
  #define SYSTEM_PACKAGES_LIST_PATH "/data/system/packages.list"
  
-@@ -262,7 +276,9 @@
- 
- void track_throne(bool prune_only)
- {
-+#ifndef KSU_FACTORY_COMPAT
- 	return; /* vendor manager seed */
-+#endif
- 	const struct cred *old_cred = override_creds(ksu_cred);
- 	struct file *fp = filp_open(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
- 	if (IS_ERR(fp)) {
-@@ -327,6 +343,16 @@
+@@ -326,6 +338,16 @@
  
  	if (prune_only)
  		goto prune;
@@ -645,7 +632,7 @@
  
  	// first, check if manager_uid exist!
  	bool manager_exist = false;
-@@ -374,4 +400,4 @@
+@@ -373,4 +395,4 @@
  void __exit ksu_throne_tracker_exit()
  {
  	// nothing to do
